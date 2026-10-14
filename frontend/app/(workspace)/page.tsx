@@ -1,0 +1,24 @@
+"use client";
+
+import Link from "next/link";
+import useSWR from "swr";
+import { ArrowRight, ArrowUpRight, BookOpenCheck, Code2, Flame, MessageSquareText, Sparkles } from "lucide-react";
+import { api } from "@/lib/api";
+
+type Dashboard = { summary: { sessions: number; responses: number; average_score: number | null }; recent: { id: number; type: string; label: string; mode: string | null; status: string; created_at: string; responses: number; average: number | null }[] };
+const date = (value: string) => new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+export default function DashboardPage() {
+  const { data, error, isLoading } = useSWR<Dashboard>("/dashboard", (path: string) => api<Dashboard>(path));
+  const summary = data?.summary;
+  return <>
+    <div className="page-heading"><div><span className="eyebrow">TECH INTERVIEW STUDIO</span><h1>Ready for your next interview?</h1><p>Mock interviews for your target role, out loud, with an AI interviewer who pushes back.</p></div><Link className="button primary" href="/practice/interview">New mock interview <ArrowRight size={16} /></Link></div>
+    <section className="welcome-banner"><div className="welcome-copy"><span className="eyebrow light-eyebrow">VOICE CALL MODE · FACE TRACKING</span><h2>Talk it through, like the real thing.</h2><p>Pick a role, join the call, and answer out loud. Alex asks follow-ups when you're vague and scores you like a hiring panel.</p><Link href="/practice/interview?mode=assessment" className="banner-link">Take a timed assessment <ArrowUpRight size={15} /></Link></div><div className="banner-mark"><Sparkles size={36} strokeWidth={1.2} /></div><div className="banner-grain" /></section>
+    <div className="section-head"><div><span className="eyebrow">AT A GLANCE</span><h2>Your progress</h2></div><Link href="/analytics" className="text-link">View progress <ArrowRight size={14} /></Link></div>
+    {error ? <div className="notice error-notice">We couldn’t load your progress. Refresh the page to try again.</div> : <div className="metric-grid"><Metric icon={<BookOpenCheck size={18} />} label="Sessions" value={isLoading ? "—" : String(summary?.sessions ?? 0)} note="Practice rounds started" /><Metric icon={<MessageSquareText size={18} />} label="Responses" value={isLoading ? "—" : String(summary?.responses ?? 0)} note="Answers reviewed" /><Metric icon={<Flame size={18} />} label="Average score" value={isLoading ? "—" : summary?.average_score == null ? "—" : `${summary.average_score}/10`} note="Across reviewed answers" /></div>}
+    <div className="content-grid dashboard-bottom"><section className="panel recent-panel"><div className="panel-heading"><div><span className="eyebrow">PICK UP WHERE YOU LEFT OFF</span><h3>Recent sessions</h3></div><Link className="icon-link" href="/history" aria-label="View history"><ArrowUpRight size={17} /></Link></div>{isLoading ? <div className="empty-state"><div className="skeleton-line" /><div className="skeleton-line short" /></div> : data?.recent.length ? <div className="session-list">{data.recent.map((item) => <Link href={`/sessions/${item.id}`} className="session-row" key={item.id}><span className="session-icon">{item.type === "coding" ? <Code2 size={18} /> : <MessageSquareText size={18} />}</span><span className="session-title"><strong>{item.label}</strong><small>{date(item.created_at)} · {item.responses} {item.responses === 1 ? "response" : "responses"}</small></span><span className="session-score">{item.average == null ? <span className="status-tag">In progress</span> : `${item.average}`}<ArrowRight size={14} /></span></Link>)}</div> : <div className="empty-state"><span className="empty-icon"><BookOpenCheck size={21} /></span><strong>Your first session is one click away.</strong><p>Choose an interview or coding round to get started.</p><Link className="text-link" href="/practice">Explore practice <ArrowRight size={14} /></Link></div>}</section>
+      <section className="panel focus-panel"><span className="eyebrow">INTERVIEWER TIP</span><h3>Say the trade-off out loud.</h3><p>Strong candidates explain why they chose an approach and what they gave up. Interviewers score the reasoning, not just the answer.</p><div className="focus-rule"><span>01</span><span>Approach → Trade-off → Example</span></div><Link className="button secondary full-button" href="/practice/interview?mode=practice">Start a practice round <ArrowRight size={15} /></Link></section></div>
+  </>;
+}
+
+function Metric({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string; note: string }) { return <article className="metric-card"><span className="metric-icon">{icon}</span><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><span className="metric-note">{note}</span></article>; }

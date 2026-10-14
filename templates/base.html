@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8fb" />
+    <title>{% block title %}Skill Mentor{% endblock %} · Skill Mentor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20261002" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="app-body">
+{% set endpoint = request.endpoint or '' %}
+{% set page_titles = {
+    'dashboard': 'Overview', 'interview_entry': 'Practice', 'round1_home': 'Personal interview',
+    'start_round1': 'Personal interview', 'round2_ai_home': 'Coding practice',
+    'round2_ai_question': 'Coding practice', 'round2_ai_complete': 'Round complete',
+    'history': 'History', 'analytics': 'Progress', 'batch': 'Achievements',
+    'profile': 'Profile', 'edit_profile': 'Profile', 'results': 'Session review'
+} %}
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="app-shell">
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Main navigation">
+        <a class="brand" href="{{ url_for('dashboard') if 'user_id' in session else url_for('index') }}">
+            <span class="brand-mark"><i class="fa-solid fa-sparkles" aria-hidden="true"></i></span>
+            <span class="brand-name">Skill<span>Mentor</span></span>
+        </a>
+
+        {% if 'user_id' in session %}
+        <nav class="side-nav">
+            <span class="nav-section-label">Workspace</span>
+            <a href="{{ url_for('dashboard') }}" class="nav-link {% if endpoint == 'dashboard' %}is-active{% endif %}">
+                <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Overview</span>
+            </a>
+            <a href="{{ url_for('interview_entry') }}" class="nav-link {% if endpoint in ['interview_entry', 'round1_home', 'start_round1'] %}is-active{% endif %}">
+                <i class="fa-regular fa-comments" aria-hidden="true"></i><span>Interview practice</span>
+            </a>
+            <a href="{{ url_for('round2_ai_home') }}" class="nav-link {% if endpoint in ['round2_ai_home', 'round2_ai_question', 'round2_ai_complete'] %}is-active{% endif %}">
+                <i class="fa-solid fa-code" aria-hidden="true"></i><span>Coding practice</span>
+            </a>
+
+            <span class="nav-section-label nav-section-spaced">Your progress</span>
+            <a href="{{ url_for('analytics') }}" class="nav-link {% if endpoint == 'analytics' %}is-active{% endif %}">
+                <i class="fa-solid fa-chart-line" aria-hidden="true"></i><span>Progress</span>
+            </a>
+            <a href="{{ url_for('history') }}" class="nav-link {% if endpoint == 'history' %}is-active{% endif %}">
+                <i class="fa-regular fa-clock" aria-hidden="true"></i><span>Session history</span>
+            </a>
+            <a href="{{ url_for('batch') }}" class="nav-link {% if endpoint == 'batch' %}is-active{% endif %}">
+                <i class="fa-solid fa-trophy" aria-hidden="true"></i><span>Achievements</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-account">
+            <a href="{{ url_for('profile') }}" class="account-link {% if endpoint in ['profile', 'edit_profile'] %}is-active{% endif %}">
+                <span class="account-avatar"><i class="fa-regular fa-user" aria-hidden="true"></i></span>
+                <span class="account-copy"><strong>{{ session.get('user_name', 'Your account') }}</strong><small>Account settings</small></span>
+                <i class="fa-solid fa-chevron-right account-chevron" aria-hidden="true"></i>
+            </a>
+            <a class="signout-link" href="{{ url_for('logout') }}"><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Sign out</a>
+        </div>
+        {% else %}
+        <div class="sidebar-auth">
+            <p>Practice with purpose. Build confidence one session at a time.</p>
+            <a class="btn btn-primary btn-block" href="{{ url_for('login') }}">Sign in</a>
+            <a class="btn btn-secondary btn-block" href="{{ url_for('register') }}">Create account</a>
+        </div>
+        {% endif %}
+    </aside>
+
+    <div class="app-main">
+        <header class="topbar">
+            <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="app-sidebar">
+                <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            </button>
+            <div class="topbar-title">
+                <span class="eyebrow">SKILL MENTOR</span>
+                <h1>{{ page_titles.get(endpoint, 'Skill Mentor') }}</h1>
+            </div>
+            {% if 'user_id' in session %}
+            <a class="topbar-action" href="{{ url_for('interview_entry') }}"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New practice</span></a>
+            {% endif %}
+        </header>
+
+        <main class="page-container" id="main-content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-messages" role="status">
+                {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">
+                    <i class="fa-solid fa-{% if category == 'success' %}circle-check{% else %}circle-info{% endif %}" aria-hidden="true"></i>
+                    <span>{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+        <footer class="app-footer">Skill Mentor <span>·</span> Make your next interview count.</footer>
+    </div>
+</div>
+<div class="sidebar-scrim" id="sidebar-scrim"></div>
+<script src="{{ url_for('static', filename='scripts.js') }}?v=20261002"></script>
+<script>
+(() => {
+    const sidebar = document.getElementById('app-sidebar');
+    const toggle = document.getElementById('sidebar-toggle');
+    const scrim = document.getElementById('sidebar-scrim');
+    const setOpen = (open) => {
+        sidebar.classList.toggle('is-open', open);
+        scrim.classList.toggle('is-visible', open);
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+    };
+    toggle?.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-open')));
+    scrim?.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
+})();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

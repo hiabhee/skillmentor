@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>User Comments</h2>
+    <p>View comments from all users and submit your own comment below.</p>
+
+    <div style="max-height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #ddd; background: #f9f9f9; margin-bottom: 20px;">
+        {% for cmd in commands %}
+            <div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+                <strong>{{ cmd.user }}</strong>: {{ cmd.command }}
+                <small class="text-muted">({{ cmd.timestamp }})</small>
+
+                <form method="POST" action="{{ url_for('like_command', command_id=cmd.id) }}" style="display:inline;">
+                    <button type="submit" style="background:none; border:none; cursor:pointer; color:{{ 'red' if cmd.liked else 'grey' }};" aria-pressed="{{ 'true' if cmd.liked else 'false' }}">
+                        ♥ {{ cmd.likes or 0 }}
+                    </button>
+                </form>
+            </div>
+        {% else %}
+            <p>No commands found.</p>
+        {% endfor %}
+    </div>
+
+    <form method="POST" action="{{ url_for('commands') }}">
+        <div class="form-group mb-3">
+            <input type="text" name="command" class="form-control" placeholder="Type your comments here..." required autofocus autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary" style="cursor:pointer;">
+            Send Comments
+        </button>
+    </form>
+</div>
+{% endblock %}

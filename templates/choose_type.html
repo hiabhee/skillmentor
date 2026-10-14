@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Start Interview</h2>
+    </div>
+
+    <div style="text-align:center; padding:20px;">
+        <p>You will complete 2 rounds:</p>
+
+        <div class="step-box">
+            <h3>Round 1 – Personal (10 Questions)</h3>
+            <p>Open-ended questions about your hobbies, goals, mindset, confidence.</p>
+        </div>
+
+        <div class="step-box">
+            <h3>Round 2 – Coding (Hard Level)</h3>
+            <p>One LeetCode-style hard problem with hidden test cases.</p>
+        </div>
+
+        <a href="{{ url_for('round1_home') }}" class="btn btn-primary" style="margin-top:20px;">
+            <i class="fas fa-play"></i> Start Round 1
+        </a>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <button onclick="history.back()" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back
+        </button>
+    </div>
+</div>
+{% endblock %}

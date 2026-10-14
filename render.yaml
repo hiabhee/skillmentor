@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: skillmentor-web
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd frontend && npm ci && npm run build
+    startCommand: cd frontend && npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.1
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: BACKEND_URL
+        fromService:
+          type: pserv
+          name: skillmentor-api
+          property: hostport
+  - type: pserv
+    name: skillmentor-api
+    runtime: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r backend/requirements.txt
+    preDeployCommand: flask --app backend.app db upgrade
+    startCommand: gunicorn --chdir . backend.app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile -
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: skillmentor-db
+          property: connectionString
+      - key: WEB_ORIGINS
+        fromService:
+          type: web
+          name: skillmentor-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: ELEVAN_LAB_API_KEY
+        sync: false
+databases:
+  - name: skillmentor-db
+    databaseName: skillmentor
+    user: skillmentor
+    region: oregon
+    plan: 0.5c-1g
+    postgresMajorVersion: "16"
+    ipAllowList: []

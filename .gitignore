@@ -1,0 +1,55 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+.env
+.idea/
+venv/
+*.log
+cert.pem
+key.pem
+localhost.crt
+localhost.key
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+frontend/node_modules/
+frontend/.next/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/public/mediapipe/wasm/
+.DS_Store
+
+# Documents, presentations, reports
+*.ppt
+*.pptx
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.zip
+report/
+report.zip
+outputs/
+
+# LaTeX build artifacts
+*.aux
+*.toc
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# Build artifacts
+*.tsbuildinfo
+
+# User uploads and generated personal files
+uploads/
+static/uploads/
+static/certificates/
+static/profile_photos/
+static/RajKadam_2310.jpg

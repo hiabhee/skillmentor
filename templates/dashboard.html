@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="overview-hero">
+    <div>
+        <span class="eyebrow">YOUR INTERVIEW WORKSPACE</span>
+        <h2>Welcome back, {{ user_name }}.</h2>
+        <p>Build confidence through focused practice. Your recent sessions and next steps are all in one place.</p>
+    </div>
+    <div class="hero-mark" aria-hidden="true"><i class="fa-solid fa-sparkles"></i></div>
+</section>
+
+<section class="stats-container" aria-label="Practice summary">
+    <article class="stat-card">
+        <div class="stat-label">Practice sessions</div>
+        <div class="stat-value">{{ interview_count }}</div>
+    </article>
+    <article class="stat-card">
+        <div class="stat-label">Average response score</div>
+        <div class="stat-value">{{ '%.1f'|format(avg_score) }}<span class="muted" style="font-size:13px;font-weight:550"> / 10</span></div>
+    </article>
+    <article class="stat-card">
+        <div class="stat-label">Reviewed answers</div>
+        <div class="stat-value">{{ scored_responses }}</div>
+    </article>
+</section>
+
+<div class="overview-grid" style="margin-top:18px">
+    <section class="panel">
+        <div class="section-heading">
+            <h2>Recent sessions</h2>
+            <a href="{{ url_for('history') }}">View history <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+        {% if recent_interviews %}
+        <div class="session-list">
+            {% for interview in recent_interviews %}
+            <article class="session-row">
+                <span class="session-icon" aria-hidden="true">
+                    <i class="fa-solid fa-{% if interview.interview_type == 'round2_ai' %}code{% else %}comments{% endif %}"></i>
+                </span>
+                <div class="session-meta">
+                    <strong>{{ 'Coding practice' if interview.interview_type == 'round2_ai' else 'Personal interview' }}</strong>
+                    <span>{{ interview.created_at }} · {{ interview.response_count }} {{ 'submission' if interview.interview_type == 'round2_ai' else 'answer' }}{{ '' if interview.response_count == 1 else 's' }}</span>
+                </div>
+                {% if interview.avg_score is not none %}
+                <span class="badge">{{ '%.1f'|format(interview.avg_score) }}/10</span>
+                {% endif %}
+                <a href="{{ url_for('results', interview_id=interview.id) }}" class="btn btn-secondary">Review</a>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>You haven’t completed a practice session yet.</p>
+            <a href="{{ url_for('interview_entry') }}" class="btn btn-primary" style="margin-top:10px">Start your first session</a>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        <div class="section-heading"><h2>Choose a practice</h2></div>
+        <div class="quick-practice">
+            <a class="quick-card" href="{{ url_for('interview_entry') }}">
+                <span class="quick-card-icon"><i class="fa-regular fa-comments" aria-hidden="true"></i></span>
+                <span><strong>Interview answers</strong><p>Practice structured responses and get focused coaching.</p></span>
+            </a>
+            <a class="quick-card" href="{{ url_for('round2_ai_home') }}">
+                <span class="quick-card-icon"><i class="fa-solid fa-code" aria-hidden="true"></i></span>
+                <span><strong>Coding challenges</strong><p>Work through algorithm problems and review your approach.</p></span>
+            </a>
+            <a class="quick-card" href="{{ url_for('analytics') }}">
+                <span class="quick-card-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span>
+                <span><strong>Track progress</strong><p>See your scores across sessions and practice types.</p></span>
+            </a>
+        </div>
+    </section>
+</div>
+{% endblock %}

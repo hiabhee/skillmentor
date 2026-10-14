@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}{{ problem.title }}{% endblock %}
+
+{% block content %}
+<div class="coding-toolbar">
+    <div>
+        <span class="eyebrow">CODING PRACTICE</span>
+        <div class="coding-progress">Challenge {{ q_no }} of {{ total }} <span aria-hidden="true">·</span> your work saves when you submit</div>
+    </div>
+    <a href="{{ url_for('round2_ai_home') }}" class="btn btn-secondary"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Exit round</a>
+</div>
+
+<div class="coding-layout">
+    <section class="problem-panel" aria-labelledby="problem-title">
+        <div class="problem-tags">
+            <span class="difficulty-badge hard">Hard</span>
+            <span class="topic-tag">{{ problem.topic }}</span>
+        </div>
+        <h2 id="problem-title">{{ problem.title }}</h2>
+        <div class="problem-description">{{ problem.description }}</div>
+
+        <h3>Constraints</h3>
+        {% for constraint in problem.constraints %}<p class="problem-constraint"><i class="fa-solid fa-minus" aria-hidden="true"></i> {{ constraint }}</p>{% endfor %}
+
+        <h3>Examples</h3>
+        {% for example in problem.examples %}
+        <div class="sample-box"><strong>Input</strong><br>{{ example.input }}<br><strong>Output</strong><br>{{ example.output if example.output else '⟨empty line⟩' }}</div>
+        {% endfor %}
+        <p class="source-note">{{ problem.source }} · Review is AI-assisted and does not run code.</p>
+    </section>
+
+    <section class="editor-panel" aria-label="Python code editor">
+        <div class="editor-head">
+            <strong><i class="fa-brands fa-python" aria-hidden="true"></i> Solution.py</strong>
+            <span>Python 3</span>
+        </div>
+        <label for="code" class="skip-link">Your Python solution</label>
+        <textarea id="code" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Your Python solution">{{ problem.starter_code }}</textarea>
+        <div class="editor-actions" id="editor-actions">
+            <p>Ctrl/⌘ + Enter to submit</p>
+            <button class="btn btn-primary" type="button" id="submit-code"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Review solution</button>
+        </div>
+        <div class="submission-result" id="submission-result" aria-live="polite" role="status">
+            <strong id="review-heading"></strong>
+            <p id="review-summary"></p>
+            <div id="review-details"></div>
+            <pre class="code-block" id="reference-solution" style="display:none;margin-top:10px"></pre>
+            <a class="btn btn-secondary" id="continue-link" href="#" style="display:none;margin-top:12px">Continue <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+    </section>
+</div>
+<div id="submit-error" class="flash flash-error" role="alert" style="display:none;margin-top:12px"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    const code = document.getElementById('code');
+    const submit = document.getElementById('submit-code');
+    const resultBox = document.getElementById('submission-result');
+    const errorBox = document.getElementById('submit-error');
+    let submitted = false;
+
+    async function submitSolution() {
+        if (submitted) return;
+        if (!code.value.trim()) {
+            errorBox.textContent = 'Add your solution before requesting a review.';
+            errorBox.style.display = 'flex';
+            code.focus();
+            return;
+        }
+        errorBox.style.display = 'none';
+        submit.disabled = true;
+        submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Reviewing code';
+        try {
+            const response = await fetch('{{ url_for("round2_ai_submit") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({code: code.value})
+            });
+            const data = await response.json();
+            if (!response.ok || data.error) throw new Error(data.error || 'The review could not be completed.');
+            submitted = true;
+            code.readOnly = true;
+            const evaluation = data.evaluation;
+            const score = evaluation.score === null ? 'Review unavailable' : `${evaluation.score}/10`;
+            const verdict = evaluation.is_correct === true ? 'Looks correct' : evaluation.is_correct === false ? 'Needs another pass' : 'Code saved';
+            document.getElementById('review-heading').textContent = `${verdict} · ${score}`;
+            document.getElementById('review-summary').textContent = evaluation.summary;
+            const detailLines = [...(evaluation.strengths || []).map((item) => `Strength: ${item}`), ...(evaluation.improvements || []).map((item) => `Next step: ${item}`)];
+            document.getElementById('review-details').textContent = detailLines.join('\n');
+            if (data.reference_solution) {
+                const reference = document.getElementById('reference-solution');
+                reference.textContent = data.reference_solution;
+                reference.style.display = 'block';
+            }
+            resultBox.classList.add('is-visible');
+            const continueLink = document.getElementById('continue-link');
+            continueLink.href = data.next_url;
+            continueLink.textContent = data.completed ? 'View round summary' : 'Continue to next challenge';
+            continueLink.style.display = 'inline-flex';
+            submit.style.display = 'none';
+        } catch (error) {
+            errorBox.textContent = error.message || 'Something went wrong. Please try again.';
+            errorBox.style.display = 'flex';
+            submit.disabled = false;
+            submit.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Review solution';
+        }
+    }
+    submit.addEventListener('click', submitSolution);
+    code.addEventListener('keydown', (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submitSolution();
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            const start = code.selectionStart;
+            const end = code.selectionEnd;
+            code.setRangeText('    ', start, end, 'end');
+        }
+    });
+})();
+</script>
+{% endblock %}

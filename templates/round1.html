@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="interview-layout">
+    <div class="coding-toolbar">
+        <div>
+            <span class="eyebrow">PERSONAL INTERVIEW</span>
+            <h2 style="margin:2px 0 0;color:#282a3b;font-size:20px;letter-spacing:-.4px">A little clarity goes a long way.</h2>
+        </div>
+        <span class="badge">Self paced</span>
+    </div>
+    <section class="panel">
+        <div class="interview-progress">
+            <span id="question-counter">Question {{ q_no }} of {{ total }}</span>
+            <span>Answer in your own words</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="question-progress" style="width: {{ (q_no / total) * 100 }}%"></div></div>
+        <div class="question-box" id="question-text">{{ question }}</div>
+        <label for="answer" class="form-label" style="display:block;margin:16px 0 7px;color:#4f5265;font-size:12px;font-weight:650">Your response</label>
+        <textarea class="answer-box" id="answer" placeholder="Write a specific example. Include what you did and what changed as a result." aria-describedby="answer-hint"></textarea>
+        <div id="answer-hint" class="muted" style="margin-top:6px;font-size:10px">Your answer is saved with this session’s review.</div>
+        <div class="controls" style="margin-top:15px">
+            <button class="btn btn-primary" id="submit-answer" type="button"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Submit answer</button>
+            <button class="btn btn-secondary" id="skip-answer" type="button">Skip this question</button>
+            <button class="btn btn-secondary" id="voice-answer" type="button"><i class="fa-solid fa-microphone" aria-hidden="true"></i> Dictate</button>
+            <button class="btn btn-secondary" id="read-question" type="button"><i class="fa-solid fa-volume-high" aria-hidden="true"></i> Read aloud</button>
+        </div>
+        <div class="feedback-box" id="feedback" style="display:none;margin-top:17px" aria-live="polite">
+            <div class="feedback-title"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Response review</div>
+            <p class="feedback-copy" id="feedback-copy"></p>
+        </div>
+        <div id="completion" style="display:none;margin-top:18px;padding:18px;background:#f3f5ff;border:1px solid #e2e5fc;border-radius:11px" aria-live="polite">
+            <h3 style="margin:0;color:#2e3151;font-size:17px">Session complete</h3>
+            <p id="completion-summary" class="muted" style="margin:6px 0 14px;font-size:13px"></p>
+            <a id="review-session" class="btn btn-primary" href="#">Review this session</a>
+            <a id="coding-next" class="btn btn-secondary" href="{{ url_for('round2_ai_home') }}" style="display:none;margin-left:6px">Try coding practice</a>
+            <a class="btn btn-secondary" href="{{ url_for('dashboard') }}" style="margin-left:6px">Back to overview</a>
+        </div>
+        <div id="request-error" class="flash flash-error" role="alert" style="display:none;margin-top:12px"></div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    const answer = document.getElementById('answer');
+    const question = document.getElementById('question-text');
+    const counter = document.getElementById('question-counter');
+    const progress = document.getElementById('question-progress');
+    const submit = document.getElementById('submit-answer');
+    const skip = document.getElementById('skip-answer');
+    const feedback = document.getElementById('feedback');
+    const feedbackCopy = document.getElementById('feedback-copy');
+    const error = document.getElementById('request-error');
+    const completion = document.getElementById('completion');
+    const controls = [submit, skip, document.getElementById('voice-answer'), document.getElementById('read-question')];
+    let questionNumber = {{ q_no }};
+    const total = {{ total }};
+
+    async function sendAnswer(passed) {
+        const responseText = answer.value.trim();
+        if (!passed && !responseText) {
+            error.textContent = 'Write an answer or skip this question to continue.';
+            error.style.display = 'flex';
+            answer.focus();
+            return;
+        }
+        error.style.display = 'none';
+        controls.forEach((button) => { button.disabled = true; });
+        submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Reviewing';
+        try {
+            const response = await fetch('{{ url_for("round1_next") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({answer: passed ? '' : responseText, passed})
+            });
+            const data = await response.json();
+            if (!response.ok || data.error) throw new Error(data.error || 'Unable to save this answer.');
+            if (data.completed) {
+                answer.disabled = true;
+                document.getElementById('answer-hint').style.display = 'none';
+                document.querySelector('.controls').style.display = 'none';
+                feedbackCopy.textContent = `${data.feedback}\nFinal answer score: ${data.score}/10`;
+                feedback.style.display = 'block';
+                completion.style.display = 'block';
+                document.getElementById('completion-summary').textContent = `Average score: ${data.avg_score}/10 · ${data.message}`;
+                document.getElementById('review-session').href = `{{ url_for('results') }}?interview_id=${data.interview_id}`;
+                if (data.qualified) document.getElementById('coding-next').style.display = 'inline-flex';
+                return;
+            }
+            feedbackCopy.textContent = data.feedback;
+            feedback.style.display = 'block';
+            question.textContent = data.question;
+            questionNumber = data.q_no;
+            counter.textContent = `Question ${questionNumber} of ${total}`;
+            progress.style.width = `${(questionNumber / total) * 100}%`;
+            answer.value = '';
+            answer.focus();
+        } catch (err) {
+            error.textContent = err.message || 'Something went wrong. Try again.';
+            error.style.display = 'flex';
+        } finally {
+            if (completion.style.display !== 'block') {
+                controls.forEach((button) => { button.disabled = false; });
+                submit.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Submit answer';
+            }
+        }
+    }
+
+    submit.addEventListener('click', () => sendAnswer(false));
+    skip.addEventListener('click', () => sendAnswer(true));
+    answer.addEventListener('keydown', (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendAnswer(false);
+    });
+    document.getElementById('read-question').addEventListener('click', () => {
+        if ('speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance(question.textContent));
+    });
+    document.getElementById('voice-answer').addEventListener('click', () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            error.textContent = 'Dictation is not available in this browser.';
+            error.style.display = 'flex';
+            return;
+        }
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.onresult = (event) => {
+            answer.value = `${answer.value}${answer.value ? ' ' : ''}${event.results[0][0].transcript}`;
+        };
+        recognition.start();
+    });
+})();
+</script>
+{% endblock %}

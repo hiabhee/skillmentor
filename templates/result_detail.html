@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>Session review</h2>
+        <p>{{ 'Coding practice' if interview.interview_type == 'round2_ai' else 'Personal interview' }} · {{ interview.created_at }}</p>
+    </div>
+    <a class="btn btn-secondary" href="{{ url_for('history') }}"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> History</a>
+</div>
+
+<section class="result-header">
+    <h2>{{ 'Coding round' if interview.interview_type == 'round2_ai' else 'Interview answers' }}</h2>
+    <div class="interview-meta">
+        <span class="meta-badge">{{ interview.difficulty.title() }} level</span>
+        <span class="meta-badge">{{ responses|length }} {{ 'submissions' if interview.interview_type == 'round2_ai' else 'answers' }}</span>
+        {% if average is not none %}<span class="meta-badge">Average review: {{ '%.1f'|format(average) }}/10</span>{% endif %}
+    </div>
+</section>
+
+{% if responses %}
+    {% for response in responses %}
+    <article class="response-card">
+        <div class="response-number">{{ loop.index }}</div>
+        <section class="question-section">
+            <div class="question-label">{{ 'Challenge' if interview.interview_type == 'round2_ai' else 'Question' }}</div>
+            <div class="question-text">{{ response.question }}</div>
+            {% if response.challenge %}
+            <details style="margin-top:8px;color:#6f7284;font-size:11px">
+                <summary style="cursor:pointer;color:#4658d9">View problem statement</summary>
+                <div class="problem-description" style="margin-top:8px">{{ response.challenge.description }}</div>
+                {% for constraint in response.challenge.constraints %}<p class="problem-constraint">{{ constraint }}</p>{% endfor %}
+            </details>
+            {% endif %}
+        </section>
+        <section class="answer-section">
+            <div class="answer-label">{{ 'Your code' if interview.interview_type == 'round2_ai' else 'Your answer' }}</div>
+            {% if interview.interview_type == 'round2_ai' %}<pre class="code-block">{{ response.answer }}</pre>
+            {% else %}<div class="answer-text">{{ response.answer }}</div>{% endif %}
+        </section>
+        <section class="feedback-section">
+            <div class="feedback-label">Review</div>
+            <div class="feedback-text">{{ response.feedback }}</div>
+            {% if response.score is not none %}<span class="score-badge {% if response.score >= 8 %}score-excellent{% elif response.score >= 6 %}score-good{% elif response.score >= 4 %}score-average{% else %}score-poor{% endif %}">Score: {{ '%.1f'|format(response.score) }}/10</span>
+            {% else %}<span class="badge">No automated score</span>{% endif %}
+        </section>
+    </article>
+    {% endfor %}
+{% else %}
+    <div class="empty-state">This session does not have any saved responses yet.</div>
+{% endif %}
+{% endblock %}

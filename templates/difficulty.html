@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Select Difficulty - {{ interview_type.title() }} Interview</h2>
+    </div>
+    
+    <div class="interview-types">
+        <div class="type-card" onclick="location.href='{{ url_for('interview', interview_type=interview_type, difficulty='easy') }}'">
+            <div class="type-icon">
+                <i class="fas fa-seedling"></i>
+            </div>
+            <h3>Easy</h3>
+            <p>Beginner level questions</p>
+            <span class="difficulty-badge easy">Easy</span>
+        </div>
+        
+        <div class="type-card" onclick="location.href='{{ url_for('interview', interview_type=interview_type, difficulty='medium') }}'">
+            <div class="type-icon">
+                <i class="fas fa-balance-scale"></i>
+            </div>
+            <h3>Medium</h3>
+            <p>Intermediate level questions</p>
+            <span class="difficulty-badge medium">Medium</span>
+        </div>
+        
+        <div class="type-card" onclick="location.href='{{ url_for('interview', interview_type=interview_type, difficulty='hard') }}'">
+            <div class="type-icon">
+                <i class="fas fa-fire"></i>
+            </div>
+            <h3>Hard</h3>
+            <p>Advanced level questions</p>
+            <span class="difficulty-badge hard">Hard</span>
+        </div>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <button onclick="history.back()" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back
+        </button>
+    </div>
+</div>
+{% endblock %}

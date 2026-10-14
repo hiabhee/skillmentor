@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>Build stronger problem-solving habits.</h2>
+        <p>Practice algorithms with well-specified challenges and a focused review of your code.</p>
+    </div>
+</div>
+
+<section class="practice-grid">
+    <article class="practice-card">
+        <div class="practice-card-head">
+            <span class="practice-icon"><i class="fa-solid fa-code" aria-hidden="true"></i></span>
+            <span class="badge">Python 3</span>
+        </div>
+        <h3>Three coding challenges</h3>
+        <p>Work through algorithm problems with examples, constraints, and a starter implementation.</p>
+        <div class="practice-facts">
+            <span><i class="fa-regular fa-clock" aria-hidden="true"></i> Self paced</span>
+            <span><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Code review after each</span>
+        </div>
+        <form method="post" action="{{ url_for('start_round2_ai') }}">
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-play" aria-hidden="true"></i> Start coding round</button>
+        </form>
+    </article>
+    <article class="practice-card">
+        <div class="practice-card-head">
+            <span class="practice-icon"><i class="fa-regular fa-circle-check" aria-hidden="true"></i></span>
+            <span class="badge">How review works</span>
+        </div>
+        <h3>Feedback with context</h3>
+        <p>Your implementation is reviewed against the prompt, examples, edge cases, and reference approach. Your code is saved with the session.</p>
+        <div class="practice-note"><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>The reviewer reasons about your code; it does not execute submissions. Treat the review as coaching, then run your solution locally.</span></div>
+    </article>
+</section>
+{% endblock %}

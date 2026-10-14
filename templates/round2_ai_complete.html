@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="interview-layout">
+    <section class="panel" style="padding:30px;text-align:center">
+        <div class="hero-mark" style="margin:0 auto 16px"><i class="fa-solid fa-check" aria-hidden="true"></i></div>
+        <span class="eyebrow">CODING PRACTICE COMPLETE</span>
+        <h2 style="margin:6px 0;color:#252738;font-size:25px;letter-spacing:-.7px">You finished the round.</h2>
+        <p class="muted" style="max-width:460px;margin:0 auto 18px;font-size:13px">You submitted {{ submitted }} of 3 challenges. Review your code and feedback to choose what to work on next.</p>
+        <div class="analytics-summary" style="justify-content:center;width:max-content;min-width:170px;margin:0 auto 20px">
+            {% if avg is not none %}<strong>{{ '%.1f'|format(avg) }}</strong><span>/ 10 average review score</span>
+            {% else %}<strong>—</strong><span>Scores unavailable</span>{% endif %}
+        </div>
+        <a class="btn btn-primary" href="{{ url_for('results', interview_id=interview_id) }}">Review submissions</a>
+        <a class="btn btn-secondary" href="{{ url_for('round2_ai_home') }}" style="margin-left:6px">Practice again</a>
+        <a class="btn btn-secondary" href="{{ url_for('dashboard') }}" style="margin-left:6px">Overview</a>
+    </section>
+</div>
+{% endblock %}

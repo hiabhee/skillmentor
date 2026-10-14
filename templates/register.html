@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="auth-container">
+    <!-- ✅ Flash Messages Display (ADD THIS) -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}" style="padding: 12px 15px; margin-bottom: 20px; border-radius: 5px; font-size: 14px;
+                    {% if category == 'error' %}
+                        background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
+                    {% elif category == 'warning' %}
+                        background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba;
+                    {% elif category == 'success' %}
+                        background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
+                    {% else %}
+                        background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb;
+                    {% endif %}">
+                    <i class="fas
+                        {% if category == 'error' %}fa-exclamation-circle
+                        {% elif category == 'warning' %}fa-exclamation-triangle
+                        {% elif category == 'success' %}fa-check-circle
+                        {% else %}fa-info-circle
+                        {% endif %}"
+                        style="margin-right: 8px;"></i>
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div style="text-align: center; margin-bottom: 30px;">
+        <i class="fas fa-user-plus" style="font-size: 2.5rem; color: #4361ee;"></i>
+        <h1>Create an Account</h1>
+    </div>
+
+    <!-- ✅ Error Display Container (for JS validation) -->
+    <div id="formErrors" style="display: none; padding: 12px 15px; margin-bottom: 20px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 5px;"></div>
+
+    <form class="auth-form" method="POST" id="registerForm" action="{{ url_for('register') }}">
+        <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+            <div id="emailError" style="color: red; margin-top: 5px; display: none;">
+                Please enter a valid email address
+            </div>
+        </div>
+
+        <div class="form-group" style="position: relative;">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required style="padding-right: 40px;">
+            <i id="togglePassword" class="fas fa-eye" style="position: absolute; top: 35px; right: 10px; cursor: pointer;"></i>
+            <div id="passwordError" style="color: red; margin-top: 5px; display: none;">
+                Password must be at least 8 characters long, include uppercase, lowercase, number, and special character.
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-user-plus"></i> Register
+        </button>
+    </form>
+
+    <!-- OR Divider -->
+    <div style="text-align: center; margin: 20px 0; position: relative;">
+        <div style="border-top: 1px solid #ddd; position: absolute; width: 100%; top: 50%;"></div>
+        <span style="background: white; padding: 0 10px; position: relative; color: #666;">OR</span>
+    </div>
+
+    <!-- Google Sign-Up Button -->
+    <a href="{{ url_for('google_login') }}" style="display: flex; align-items: center; justify-content: center; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 5px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.3s; margin-bottom: 15px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" style="margin-right: 10px;">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Sign up with Google
+    </a>
+
+    <div style="text-align: center; margin-top: 20px;">
+        <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+    </div>
+</div>
+
+<script>
+// Password show/hide
+const togglePassword = document.getElementById('togglePassword');
+const password = document.getElementById('password');
+
+togglePassword.addEventListener('click', () => {
+    const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+    password.setAttribute('type', type);
+    togglePassword.classList.toggle('fa-eye-slash');
+});
+
+// Frontend validation
+document.getElementById('registerForm').addEventListener('submit', function(e){
+    const email = document.getElementById('email').value.trim();
+    const passwordVal = password.value;
+    const allowedDomains = ['@gmail.com', '@apsit.edu.in'];
+
+    let errors = [];
+
+    // Email validation
+    if (!allowedDomains.some(domain => email.endsWith(domain))) {
+        errors.push('Please enter a valid email address.');
+    }
+
+    // Password validation for all special characters
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+    if (!passwordRegex.test(passwordVal)) {
+        errors.push('Password must be at least 8 characters, include uppercase, lowercase, number, and special character.');
+    }
+
+    const errorDiv = document.getElementById('formErrors');
+    if (errors.length > 0) {
+        e.preventDefault();
+        errorDiv.innerHTML = '<i class="fas fa-exclamation-circle" style="margin-right: 8px;"></i>' + errors.join('<br>');
+        errorDiv.style.display = 'block';
+        // Scroll to top to show error
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        errorDiv.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="interview-layout">
+    <div class="page-heading">
+        <div>
+            <h2>Personal interview practice</h2>
+            <p>A guided set of questions with clear, actionable feedback after each response.</p>
+        </div>
+    </div>
+    <section class="panel">
+        <div class="practice-card-head">
+            <span class="practice-icon"><i class="fa-regular fa-comments" aria-hidden="true"></i></span>
+            <span class="badge">10 questions · Self paced</span>
+        </div>
+        <h3 style="margin:18px 0 7px;color:#282a3b;font-size:17px">What to expect</h3>
+        <p class="muted" style="font-size:13px">Share specific examples from your experience. Each answer is reviewed for relevance, ownership, clarity, and impact. Your session review will be available when you finish.</p>
+        <div class="practice-note"><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>Use a simple structure: set the context, describe your actions, then explain the result and what you learned.</span></div>
+        <form action="{{ url_for('start_round1') }}" method="get" style="margin-top:17px">
+            <button class="btn btn-primary" type="submit"><i class="fa-solid fa-play" aria-hidden="true"></i> Begin practice</button>
+            <a class="btn btn-secondary" href="{{ url_for('interview_entry') }}" style="margin-left:7px">Back to practice types</a>
+        </form>
+    </section>
+</div>
+{% endblock %}

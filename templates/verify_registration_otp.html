@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verify Registration OTP</title>
+</head>
+<body>
+    <h2>Verify Your Gmail</h2>
+    <p>We sent an OTP to <strong>{{ email }}</strong>. Enter it below:</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul>
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+        <label>OTP: <input type="text" name="otp" maxlength="6" required></label><br>
+        <button type="submit">Verify & Complete Registration</button>
+    </form>
+</body>
+</html>

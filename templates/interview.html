@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ interview_type.title() }} Interview - {{ difficulty.title() }} Level</h2>
+        <div>
+            <button onclick="location.href='{{ url_for('dashboard') }}'" class="btn btn-secondary">
+                <i class="fas fa-home"></i> Dashboard
+            </button>
+            <button onclick="history.back()" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </button>
+        </div>
+    </div>
+    <div class="interview-container">
+        <div class="progress-info">
+            <span>Question {{ question_number }} of {{ total_questions }}</span>
+            <span class="difficulty-badge {{ difficulty }}">{{ difficulty.title() }}</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ (question_number / total_questions) * 100 }}%"></div>
+        </div>
+        <div class="question-box">
+            <p id="current-question">{{ question }}</p>
+        </div>
+        <textarea class="answer-box" id="answer" placeholder="Type your answer here..."></textarea>
+        <div class="controls">
+            <button onclick="startVoiceInput()" class="btn btn-accent" id="voice-btn">
+                <i class="fas fa-microphone"></i> Voice Input
+            </button>
+            <button onclick="speakQuestion()" class="btn btn-secondary">
+                <i class="fas fa-volume-up"></i> Read Question
+            </button>
+            <button onclick="submitAnswer(false)" class="btn btn-primary">
+                <i class="fas fa-paper-plane"></i> Submit Answer
+            </button>
+            <button onclick="submitAnswer(true)" class="btn btn-warning">
+                <i class="fas fa-forward"></i> Pass Question
+            </button>
+            <!-- New button to read feedback -->
+            <button onclick="readFeedback()" class="btn btn-info">
+                <i class="fas fa-headphones"></i> Read Feedback
+            </button>
+        </div>
+        <div class="feedback-box" id="feedback">
+            <div class="feedback-title">
+                <i class="fas fa-robot"></i> AI Feedback
+            </div>
+            <p>Your answer will be analyzed here. Try to include specific examples, metrics, and focus on the problem-action-result structure.</p>
+        </div>
+        <!--<div class="timer-container" style="margin: 10px 0; font-weight: bold;">
+            Time left: <span id="time-left">60</span> seconds
+        </div>-->
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const totalQuestions = {{ total_questions }};
+
+let recognition = null;
+let isListening = false;
+
+function speakQuestion() {
+    const question = document.getElementById('current-question').textContent;
+    const utterance = new SpeechSynthesisUtterance(question);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    speechSynthesis.speak(utterance);
+}
+
+function readFeedback() {
+    const feedbackBox = document.getElementById('feedback');
+    const feedbackText = feedbackBox.innerText || feedbackBox.textContent;
+    if (feedbackText.trim()) {
+        const utterance = new SpeechSynthesisUtterance(feedbackText);
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        speechSynthesis.speak(utterance);
+    } else {
+        alert("No feedback available yet!");
+    }
+}
+
+function startVoiceInput() {
+    const voiceBtn = document.getElementById('voice-btn');
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        alert('Speech recognition is not supported in this browser.');
+        return;
+    }
+    if (isListening) {
+        if (recognition) recognition.stop();
+        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Input';
+        voiceBtn.classList.remove('btn-danger');
+        voiceBtn.classList.add('btn-accent');
+        isListening = false;
+        return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = function() {
+        voiceBtn.innerHTML = '<i class="fas fa-microphone-slash"></i> Stop Listening';
+        voiceBtn.classList.remove('btn-accent');
+        voiceBtn.classList.add('btn-danger');
+        isListening = true;
+    };
+    recognition.onresult = function(event) {
+        document.getElementById('answer').value = event.results[0][0].transcript;
+    };
+    recognition.onerror = function() {
+        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Input';
+        voiceBtn.classList.remove('btn-danger');
+        voiceBtn.classList.add('btn-accent');
+        isListening = false;
+    };
+    recognition.onend = function() {
+        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Input';
+        voiceBtn.classList.remove('btn-danger');
+        voiceBtn.classList.add('btn-accent');
+        isListening = false;
+    };
+    recognition.start();
+}
+
+function submitAnswer(passed) {
+    const answer = document.getElementById('answer').value;
+    if (!passed && !answer.trim()) {
+        alert('Please provide an answer or use the "Pass Question" button');
+        return;
+    }
+
+    document.getElementById('feedback').innerHTML = `
+        <div class="feedback-title">
+            <i class="fas fa-robot"></i> AI Feedback
+        </div>
+        <p><i class="fas fa-spinner fa-spin"></i> Analyzing your response...</p>
+    `;
+
+    document.querySelectorAll('.controls button').forEach(btn => btn.disabled = true);
+
+    fetch('{{ url_for("next_question") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ answer: answer, passed: passed })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // ✅ CHECK: Is this the last question?
+        if (data.last_question) {
+            // Show feedback for the 10th question
+            document.getElementById('feedback').innerHTML = `
+                <div class="feedback-title">
+                    <i class="fas fa-robot"></i> AI Feedback (Question 10)
+                </div>
+                <p>${data.feedback}</p>
+                <div style="margin-top: 15px; padding: 10px; background: #e9f7ef; border-radius: 8px;">
+                    <strong>Score: ${data.score}/10</strong>
+                </div>
+                <br>
+                <p style="color: green; font-weight: bold; font-size: 18px;">
+                    <i class="fas fa-check-circle"></i> ${data.message}
+                </p>
+            `;
+
+            // Hide question box and answer textarea
+            const questionBox = document.querySelector('.question-box');
+            const answerBox = document.getElementById('answer');
+            if (questionBox) questionBox.style.display = 'none';
+            if (answerBox) answerBox.style.display = 'none';
+
+            // Replace controls with "View Average Score" button
+            const controlsDiv = document.querySelector('.controls');
+            if (controlsDiv) {
+                controlsDiv.innerHTML = `
+                    <button onclick="viewAverageScore()" class="btn btn-primary" style="font-size: 18px; padding: 15px 30px;">
+                        <i class="fas fa-chart-bar"></i> View Average Score
+                    </button>
+                `;
+            }
+        }
+        // ✅ Interview completed (fallback)
+        else if (data.completed) {
+            showFinalResults(data);
+        }
+        // ✅ More questions to go
+        else {
+            document.getElementById('current-question').textContent = data.question;
+            document.getElementById('answer').value = '';
+
+            const progressInfo = document.querySelector('.progress-info span:first-child');
+            const progressFill = document.querySelector('.progress-fill');
+
+            if (progressInfo) progressInfo.textContent = `Question ${data.question_number} of ${totalQuestions}`;
+            if (progressFill) progressFill.style.width = `${(data.question_number / totalQuestions) * 100}%`;
+
+            document.getElementById('feedback').innerHTML = `
+                <div class="feedback-title">
+                    <i class="fas fa-robot"></i> AI Feedback
+                </div>
+                <p>${data.feedback}</p>
+                <div style="margin-top: 15px; padding: 10px; background: #e9f7ef; border-radius: 8px;">
+                    <strong>Score: ${data.score}/10</strong>
+                </div>
+            `;
+            document.querySelectorAll('.controls button').forEach(btn => btn.disabled = false);
+        }
+    })
+    .catch(error => {
+        console.error('Full error:', error);
+        document.getElementById('feedback').innerHTML = `
+            <div class="feedback-title">
+                <i class="fas fa-exclamation-triangle"></i> Error
+            </div>
+            <p>Failed to process your answer: ${error}</p>
+        `;
+        document.querySelectorAll('.controls button').forEach(btn => btn.disabled = false);
+    });
+}
+
+// ✅ NEW FUNCTION: View Average Score
+function viewAverageScore() {
+    document.getElementById('feedback').innerHTML = `
+        <div class="feedback-title">
+            <i class="fas fa-spinner fa-spin"></i> Calculating...
+        </div>
+        <p>Please wait while we calculate your average score...</p>
+    `;
+
+    fetch('{{ url_for("get_average_score") }}')
+    .then(response => response.json())
+    .then(data => {
+        showFinalResults(data);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('feedback').innerHTML = `
+            <div class="feedback-title">
+                <i class="fas fa-exclamation-triangle"></i> Error
+            </div>
+            <p>Failed to calculate average score: ${error}</p>
+        `;
+    });
+}
+
+// ✅ Function to show final results
+function showFinalResults(data) {
+    document.getElementById('feedback').innerHTML = `
+        <div class="feedback-title">
+            <i class="fas fa-check-circle"></i> Interview Completed
+        </div>
+        <p>${data.feedback}</p>
+        <div style="margin-top: 15px; padding: 10px; background: #e9f7ef; border-radius: 8px;">
+            <strong style="font-size: 20px;">Final Score: ${data.final_score}/10</strong>
+        </div>
+    `;
+
+    const controlsDiv = document.querySelector('.controls');
+    if (controlsDiv) {
+        controlsDiv.innerHTML = `
+            <button onclick="location.href='{{ url_for('results') }}'" class="btn btn-primary">
+                <i class="fas fa-chart-line"></i> View Detailed Results
+            </button>
+            <button onclick="location.href='{{ url_for('batch') }}'" class="btn btn-success">
+                <i class="fas fa-medal"></i> View Your Badge
+            </button>
+            <button onclick="location.href='{{ url_for('dashboard') }}'" class="btn btn-secondary">
+                <i class="fas fa-home"></i> Dashboard
+            </button>
+        `;
+    }
+}
+</script>
+{% endblock %}

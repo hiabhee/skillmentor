@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="batch-container">
+    <h2><i class="fas fa-layer-group"></i> Your Badge</h2>
+
+    <div class="user-batch" style="margin-top:20px; display: flex; align-items: center;">
+        <h3 style="margin-right: 10px;">Current Badge:</h3>
+        <span style="color:{{ color }}; font-weight:bold; font-size: 24px; display: flex; align-items: center;">
+            {{ user_batch }}
+            <img src="{{ medal_img }}" alt="{{ user_batch }} Medal" style="height: 30px; margin-left: 8px;">
+        </span>
+    </div>
+
+    <p style="margin-top: 10px;">Average Score: {{ avg_score }}/10</p>
+
+    <button id="generate-cert-btn" class="btn btn-primary" style="margin-top: 20px;">
+        <i class="fas fa-certificate"></i> Generate Certificate
+    </button>
+
+    <div id="certificate-output" style="margin-top: 20px;"></div>
+
+    <div class="all-batches" style="margin-top:40px;">
+        <h4>All Badges</h4>
+        <ul>
+            <li><span style="color:gold; font-weight:bold;">Gold</span>: Avg score ≥ 8</li>
+            <li><span style="color:silver; font-weight:bold;">Silver</span>: 5-7.9</li>
+            <li><span style="color:#cd7f32; font-weight:bold;">Bronze</span>: < 5</li>
+        </ul>
+    </div>
+</div>
+
+
+<script>
+document.getElementById('generate-cert-btn').addEventListener('click', function() {
+    const button = this;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+    fetch('/generate_certificate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            batch: '{{ user_batch }}',
+            user_name: '{{ user_name }}',
+            avg_score: {{ avg_score }}
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Server error');
+        }
+        return response.blob();  // ✅ Get as file instead of JSON
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '{{ user_name }}_{{ user_batch }}_certificate.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        // Show success message
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-certificate"></i> Generate Certificate';
+        document.getElementById('certificate-output').innerHTML = '<p style="color: green;"><i class="fas fa-check-circle"></i> Certificate downloaded successfully!</p>';
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-certificate"></i> Generate Certificate';
+        document.getElementById('certificate-output').innerHTML = '<p style="color: red;"><i class="fas fa-exclamation-circle"></i> Failed to generate certificate. Please try again.</p>';
+    });
+});
+</script>
+{% endblock %}

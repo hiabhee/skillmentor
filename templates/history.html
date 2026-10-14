@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>Your practice history</h2>
+        <p>Review past answers, coding submissions, and feedback.</p>
+    </div>
+    {% if responses %}
+    <form action="{{ url_for('delete_all_history') }}" method="post" onsubmit="return confirm('Delete all saved responses? This cannot be undone.');">
+        <button type="submit" class="btn btn-secondary"><i class="fa-regular fa-trash-can" aria-hidden="true"></i> Clear history</button>
+    </form>
+    {% endif %}
+</div>
+
+<section class="leaderboard-container">
+    {% if responses %}
+    <div class="table-wrapper">
+        <table class="leaderboard-table">
+            <thead><tr><th>Date</th><th>Practice</th><th>Question / challenge</th><th>Score</th><th>Details</th><th></th></tr></thead>
+            <tbody>
+                {% for response in responses %}
+                <tr>
+                    <td>{{ response.created_at }}</td>
+                    <td>{{ 'Coding' if response.interview_type == 'round2_ai' else 'Interview' }}</td>
+                    <td><strong>{{ response.question }}</strong></td>
+                    <td>{% if response.score is not none %}<span class="badge">{{ '%.1f'|format(response.score) }}/10</span>{% else %}<span class="muted">Not scored</span>{% endif %}</td>
+                    <td>
+                        <details>
+                            <summary style="cursor:pointer;color:#4658d9">Review answer</summary>
+                            <div style="min-width:220px;max-width:360px;margin-top:8px">
+                                <strong>Your response</strong>
+                                {% if response.interview_type == 'round2_ai' %}<pre class="code-block" style="max-height:200px;margin-top:5px">{{ response.answer }}</pre>
+                                {% else %}<p style="white-space:pre-wrap">{{ response.answer }}</p>{% endif %}
+                                <strong style="display:block;margin-top:9px">Feedback</strong>
+                                <p style="white-space:pre-wrap">{{ response.feedback }}</p>
+                            </div>
+                        </details>
+                    </td>
+                    <td>
+                        <form action="{{ url_for('delete_response', response_id=response.id) }}" method="post" onsubmit="return confirm('Delete this response?');">
+                            <button class="btn btn-secondary" type="submit" aria-label="Delete response"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No saved responses yet. Start a practice session and your work will appear here.</div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="auth-container">
+    <h2 style="text-align:center; margin-bottom: 20px;">Captcha Verification</h2>
+    <form method="POST" action="{{ url_for('captcha_page') }}" class="auth-form">
+        <div class="form-group">
+            <label>Solve this: {{ captcha_question }}</label>
+            <input type="text" name="captcha" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+</div>
+{% endblock %}

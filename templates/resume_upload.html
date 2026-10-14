@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Upload Your Resume</h2>
+    </div>
+    <div class="card-body">
+
+        <!-- Display flash messages -->
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert alert-warning" role="alert">
+                    {% for message in messages %}
+                        {{ message }}<br>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="resume">Select Resume (PDF/DOCX)</label>
+                <input type="file" name="resume" id="resume" class="form-control" accept=".pdf,.doc,.docx" required>
+            </div>
+            <button type="submit" class="btn btn-primary mt-2">
+                Upload
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

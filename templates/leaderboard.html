@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+  /* Wrapper for leaderboard table */
+  .table-wrapper {
+    max-width: 100%;
+    margin-top: 10px;
+    border-radius: 12px;
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 600px; /* max height with vertical scrollbar */
+  }
+
+  /* Desktop and tablet default */
+  .leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
+    text-align: center;
+  }
+
+  .leaderboard-table th,
+  .leaderboard-table td {
+    padding: 12px 15px;
+    white-space: nowrap;
+    border-bottom: 1px solid #ddd;
+  }
+
+  /* Phone specific override */
+  @media (max-width: 600px) {
+    .leaderboard-table {
+      font-size: 0.8rem;
+      table-layout: fixed;
+    }
+
+    .leaderboard-table th,
+    .leaderboard-table td {
+      padding: 6px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+    }
+
+    /* Set column widths on phone */
+    .leaderboard-table th:nth-child(1),
+    .leaderboard-table td:nth-child(1) {
+      width: 8%; /* Rank */
+    }
+    .leaderboard-table th:nth-child(2),
+    .leaderboard-table td:nth-child(2) {
+      width: 37%; /* User */
+      text-align: left;
+      padding-left: 10px;
+    }
+    .leaderboard-table th:nth-child(3),
+    .leaderboard-table td:nth-child(3) {
+      width: 20%; /* Average Score */
+    }
+    .leaderboard-table th:nth-child(4),
+    .leaderboard-table td:nth-child(4) {
+      width: 20%; /* Responses */
+    }
+    .leaderboard-table th:nth-child(5),
+    .leaderboard-table td:nth-child(5) {
+      width: 15%; /* Average Marks */
+    }
+  }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="leaderboard-container">
+    <h2><i class="fas fa-trophy"></i> Leaderboard</h2>
+
+    <div class="table-wrapper">  <!-- Add this wrapper here -->
+
+        {% for round_name, leaders in leaderboards.items() %}
+        <h3 style="margin-top: 30px;">{{ round_name }} Round</h3>
+
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>User</th>
+                    <th>Average Score</th>
+                    <th>Responses</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in leaders %}
+                <tr>
+                    <td data-label="Rank">{{ loop.index }}</td>
+                    <td data-label="User">{{ entry['name'] }}</td>
+                    <td data-label="Average Score">{{ "%.1f"|format(entry['avg_score']) }}</td>
+                    <td data-label="Responses">{{ entry['interviews_count'] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+
+    </div>  <!-- Close wrapper -->
+</div>
+{% endblock %}
