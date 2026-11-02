@@ -6,7 +6,7 @@ import { ArrowRight, Check, ChevronDown, CircleAlert, Lightbulb, Loader2, Rotate
 import { api, feedbackObject } from "@/lib/api";
 import { type Report, scoreTone, type TechSession } from "@/lib/interview";
 
-const EVENT_LABEL: Record<string, string> = { no_face: "Out of frame", multiple_faces: "Another person in view", looking_away: "Looking away", tab_hidden: "Left the tab", camera_off: "Camera off" };
+const EVENT_LABEL: Record<string, string> = { no_face: "Out of frame", multiple_faces: "Another person in view", looking_away: "Looking away", tab_hidden: "Left the tab", camera_off: "Camera off", late_answer: "Answered after the time limit" };
 
 function ScoreRing({ score }: { score: number }) {
   const radius = 54, circumference = 2 * Math.PI * radius;

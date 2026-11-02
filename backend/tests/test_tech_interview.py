@@ -68,8 +68,10 @@ def test_practice_flow_with_follow_up_feedback_and_report(signed_in, planned, mo
     report = signed_in.post(f"/api/v1/interviews/{interview_id}/report", headers=headers)
     assert report.status_code == 200
     assert report.json["report"]["overall_score"] == 7.0 and report.json["report"]["verdict"] == "Hire"
+    assert report.json["report"]["automated"] is False
     final = signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]
-    assert final["status"] == "completed" and final["report"]["overall_score"] == 7.0 and len(final["turns"]) == 7
+    # The fallback report is not stored, so the next visit retries the AI summary.
+    assert final["status"] == "completed" and final["report"] is None and len(final["turns"]) == 7
 
 
 def test_assessment_hides_scores_until_complete_and_is_proctored(signed_in, planned):
@@ -150,3 +152,80 @@ def test_model_output_is_validated(monkeypatch):
 def test_capabilities_report_voice_and_ai(signed_in, monkeypatch):
     monkeypatch.setattr(routes.voice_service, "VOICE_ENABLED", True)
     assert signed_in.get("/api/v1/capabilities").json["voice"] is True
+
+
+def test_in_progress_assessment_scores_do_not_leak_through_aggregates(signed_in, planned):
+    headers = csrf_headers(signed_in)
+    practice = _create(signed_in).json["interview"]["id"]
+    signed_in.post(f"/api/v1/interviews/{practice}/turns", json={"answer": "Practice answer"}, headers=headers)
+    before = (signed_in.get("/api/v1/dashboard").json["summary"]["average_score"], signed_in.get("/api/v1/analytics").json)
+    assessment = _create(signed_in, mode="assessment").json["interview"]["id"]
+    tech_interview_evaluate = tech_interview.evaluate_turn
+    tech_interview.evaluate_turn = _evaluation(score=9.5)
+    try:
+        signed_in.post(f"/api/v1/interviews/{assessment}/turns", json={"answer": "Hidden answer"}, headers=headers)
+    finally:
+        tech_interview.evaluate_turn = tech_interview_evaluate
+    assert signed_in.get("/api/v1/dashboard").json["summary"]["average_score"] == before[0] == 7.0
+    assert signed_in.get("/api/v1/analytics").json == before[1]
+    strong = [item for item in signed_in.get("/api/v1/achievements").json["achievements"] if item["id"] == "strong_answer"][0]
+    assert strong["unlocked"] is False
+
+
+def test_paid_ai_actions_are_rate_limited_per_user(signed_in, planned, app):
+    app.config["AI_RATE_LIMITS"] = {"interview": (2, 3600), "answer": (1, 3600), "transcription": (1, 3600)}
+    assert _create(signed_in).status_code == 201
+    interview_id = _create(signed_in).json["interview"]["id"]
+    limited = _create(signed_in)
+    assert limited.status_code == 429 and limited.json["error"]["code"] == "rate_limited"
+    headers = csrf_headers(signed_in)
+    assert signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "One"}, headers=headers).status_code == 200
+    assert signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "Two"}, headers=headers).status_code == 429
+    # A rejected request does not change the interview.
+    assert len(signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]["turns"]) == 1
+
+
+def test_rate_limit_window_resets(signed_in, planned, app):
+    from datetime import timedelta
+    from backend.extensions import db
+    from backend.models import RateLimitBucket
+    app.config["AI_RATE_LIMITS"] = {"interview": (1, 3600), "answer": (5, 3600), "transcription": (5, 3600)}
+    assert _create(signed_in).status_code == 201
+    assert _create(signed_in).status_code == 429
+    with app.app_context():
+        for bucket in RateLimitBucket.query.all():
+            bucket.window_started_at -= timedelta(hours=2)
+        db.session.commit()
+    assert _create(signed_in).status_code == 201
+
+
+def test_late_assessment_answers_are_recorded(signed_in, planned, app):
+    from datetime import timedelta
+    from backend.extensions import db
+    headers = csrf_headers(signed_in)
+    interview_id = _create(signed_in, mode="assessment").json["interview"]["id"]
+    signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "On time"}, headers=headers)
+    with app.app_context():
+        question = InterviewQuestion.query.filter_by(interview_id=interview_id, position=1).one()
+        question.created_at -= timedelta(seconds=routes.ASSESSMENT_ANSWER_SECONDS + routes.ASSESSMENT_GRACE_SECONDS + 30)
+        db.session.commit()
+    signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "Late"}, headers=headers)
+    integrity = signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]["integrity"]
+    assert integrity["events"]["late_answer"]["count"] == 1
+    assert 25 <= integrity["events"]["late_answer"]["seconds"] <= 35
+
+
+def test_fallback_report_is_not_cached_so_it_retries(signed_in, planned, monkeypatch):
+    headers = csrf_headers(signed_in)
+    interview_id = _create(signed_in).json["interview"]["id"]
+    for _ in range(6):
+        signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "Answer"}, headers=headers)
+    monkeypatch.setattr(tech_interview.ai_service, "_call_model", lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("busy")))
+    first = signed_in.post(f"/api/v1/interviews/{interview_id}/report", headers=headers).json["report"]
+    assert first["automated"] is False
+    assert signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]["report"] is None
+    monkeypatch.setattr(tech_interview.ai_service, "_call_model", lambda *args, **kwargs: json.dumps(
+        {"summary": "Solid answers.", "strengths": ["Clear"], "improvements": ["Depth"], "next_steps": ["Practice"]}))
+    second = signed_in.post(f"/api/v1/interviews/{interview_id}/report", headers=headers).json["report"]
+    assert second["automated"] is True
+    assert signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]["report"]["summary"] == "Solid answers."

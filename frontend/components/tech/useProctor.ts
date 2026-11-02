@@ -15,11 +15,13 @@ let detectorPromise: Promise<FaceDetector> | null = null;
 function loadDetector() {
   detectorPromise ??= import("@mediapipe/tasks-vision").then(async ({ FaceDetector, FilesetResolver }) => {
     const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-    return FaceDetector.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: "/mediapipe/blaze_face_short_range.tflite", delegate: "GPU" },
+    const create = (delegate: "GPU" | "CPU") => FaceDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: "/mediapipe/blaze_face_short_range.tflite", delegate },
       runningMode: "VIDEO",
       minDetectionConfidence: 0.5,
     });
+    // Machines without WebGL2 cannot use the GPU delegate; the CPU delegate is slower but fine at four frames a second.
+    return create("GPU").catch(() => create("CPU"));
   }).catch((error) => { detectorPromise = null; throw error; });
   return detectorPromise;
 }

@@ -21,7 +21,7 @@ from .ai_service import (
 from . import tech_interview, voice_service
 from .extensions import db
 from .models import (AuthSession, CodingChallenge, Interview, InterviewQuestion, LoginAttempt, ProctorEvent,
-                     Response, User, utcnow)
+                     RateLimitBucket, Response, User, utcnow)
 
 api = Blueprint("api", __name__)
 
@@ -44,6 +44,41 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 DEMO_ACCOUNT_EMAIL = "demo@skillmentor.example"
 PROCTOR_KINDS = {"no_face", "multiple_faces", "looking_away", "tab_hidden", "camera_off"}
 MAX_PROCTOR_EVENTS = 300
+# Assessment answers get this much time after the question is asked (limit plus speech and network slack).
+ASSESSMENT_ANSWER_SECONDS = 180
+ASSESSMENT_GRACE_SECONDS = 90
+
+
+def _visible_score_filter():
+    """Exclude answers from assessments that are still in progress; their scores stay hidden until the end."""
+    return or_(Interview.interview_type != "tech", Interview.mode != "assessment", Interview.status == "completed")
+
+
+def _rate_limited(scope):
+    """Count one request against the user's hourly budget for a paid AI action."""
+    limit, window = current_app.config["AI_RATE_LIMITS"][scope]
+    key = _hash(f"{scope}:{g.current_user.id}")
+    now = utcnow()
+    bucket = db.session.get(RateLimitBucket, key)
+    if bucket is None:
+        bucket = RateLimitBucket(key_hash=key, count=0, window_started_at=now)
+        db.session.add(bucket)
+    elif bucket.window_started_at <= now - timedelta(seconds=window):
+        bucket.count, bucket.window_started_at = 0, now
+    if bucket.count >= limit:
+        db.session.rollback()
+        return True
+    bucket.count += 1
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # A parallel request created the bucket first; let this one through.
+        db.session.rollback()
+    return False
+
+
+def _rate_limit_error():
+    return _error("rate_limited", "You have reached the hourly limit for this action. Try again later.", 429)
 
 
 def _public_type(interview_type):
@@ -132,6 +167,7 @@ def _session_response(user):
     AuthSession.query.filter(or_(AuthSession.expires_at <= now,
                                  AuthSession.revoked_at <= now - timedelta(days=30))).delete(synchronize_session=False)
     LoginAttempt.query.filter(LoginAttempt.window_started_at <= now - timedelta(days=1)).delete(synchronize_session=False)
+    RateLimitBucket.query.filter(RateLimitBucket.window_started_at <= now - timedelta(days=1)).delete(synchronize_session=False)
     auth = AuthSession(
         token_hash=_hash(raw_token), user_id=user.id, csrf_hash=_hash(csrf_token),
         expires_at=now + timedelta(seconds=current_app.config["SESSION_TTL_SECONDS"]),
@@ -392,7 +428,8 @@ def dashboard():
     user_id = g.current_user.id
     total = Interview.query.filter_by(user_id=user_id).count()
     response_count = Response.query.filter_by(user_id=user_id).count()
-    average = db.session.query(func.avg(Response.score)).filter(Response.user_id == user_id, Response.score.isnot(None)).scalar()
+    average = db.session.query(func.avg(Response.score)).join(Interview, Interview.id == Response.interview_id).filter(
+        Response.user_id == user_id, Response.score.isnot(None), _visible_score_filter()).scalar()
     latest = Interview.query.filter_by(user_id=user_id).order_by(Interview.created_at.desc(), Interview.id.desc()).limit(5).all()
     recent = []
     for item in latest:
@@ -453,6 +490,8 @@ def _create_tech_interview(data):
         return _error("invalid_focus", "Focus areas must be at most 200 characters.", 400)
     if not isinstance(voice_only, bool) or not isinstance(proctored, bool):
         return _error("invalid_options", "Interview options are invalid.", 400)
+    if _rate_limited("interview"):
+        return _rate_limit_error()
     role = tech_interview.role_title(role_key, custom_role.strip() if isinstance(custom_role, str) else "")
     focus = " ".join(focus.split())
     plan, _generated = tech_interview.plan_interview(role, level, focus, mode, role_key)
@@ -579,11 +618,14 @@ def submit_interview_answer(interview_id):
     position = next((candidate for candidate in range(len(ROUND1_QUESTIONS)) if candidate not in existing_positions), len(ROUND1_QUESTIONS))
     if position >= len(ROUND1_QUESTIONS) or interview.status == "completed":
         return _error("interview_completed", "This interview is already complete.", 409)
+    if _rate_limited("answer"):
+        return _rate_limit_error()
     question = ROUND1_QUESTIONS[position]
     stored_answer = answer if answer else "(skipped)"
     try:
         feedback = review_interview_answer(question, stored_answer)
     except Exception:
+        current_app.logger.warning("AI answer review failed; using the fallback", exc_info=True)
         feedback = fallback_interview_feedback(stored_answer)
     feedback_text = json.dumps(feedback, ensure_ascii=False)
     response = Response(user_id=g.current_user.id, interview_id=interview.id, question=question,
@@ -650,6 +692,8 @@ def transcribe_answer(interview_id):
         return _error("audio_required", "The recording was empty. Try again.", 400)
     if len(audio) > MAX_AUDIO_BYTES:
         return _error("audio_too_large", "Recordings must be at most 10 MB.", 413)
+    if _rate_limited("transcription"):
+        return _rate_limit_error()
     try:
         transcript = voice_service.transcribe(audio, upload.filename, content_type)
     except voice_service.VoiceError:
@@ -683,6 +727,8 @@ def submit_tech_turn(interview_id):
         return _error("interview_completed", "This interview is already complete.", 409)
     if position is not None and position != current.position:
         return _error("out_of_order", "This question was already answered. Refresh to continue.", 409)
+    if _rate_limited("answer"):
+        return _rate_limit_error()
     stored_answer = answer or "(skipped)"
     follow_ups_used = sum(1 for item in questions if item.is_follow_up)
     main_asked = sum(1 for item in questions if not item.is_follow_up)
@@ -695,6 +741,11 @@ def submit_tech_turn(interview_id):
     db.session.add(Response(user_id=g.current_user.id, interview_id=interview.id, question=current.question,
                             answer=stored_answer, feedback=json.dumps(feedback, ensure_ascii=False),
                             score=feedback["score"], question_position=current.position))
+    if interview.mode == "assessment" and current.position > 0 and current.created_at:
+        overtime = (utcnow() - current.created_at).total_seconds() - ASSESSMENT_ANSWER_SECONDS - ASSESSMENT_GRACE_SECONDS
+        if overtime > 0:
+            db.session.add(ProctorEvent(interview_id=interview.id, kind="late_answer",
+                                        duration_ms=min(int(overtime * 1000), 3_600_000), question_position=current.position))
     next_item = None
     if follow_up:
         next_item = InterviewQuestion(interview_id=interview.id, position=current.position + 1, question=follow_up,
@@ -733,8 +784,10 @@ def create_tech_report(interview_id):
               "score": responses[item.position].score} for item in questions if item.position in responses]
     report = tech_interview.build_report(role=interview.role, level=interview.level, mode=interview.mode,
                                          turns=turns, integrity=_integrity(interview))
-    interview.report_json = json.dumps(report, ensure_ascii=False)
-    db.session.commit()
+    # Keep only an AI report, so a transient provider failure is retried on the next visit.
+    if report["automated"]:
+        interview.report_json = json.dumps(report, ensure_ascii=False)
+        db.session.commit()
     return jsonify({"report": report})
 
 
@@ -794,10 +847,13 @@ def submit_code(interview_id):
     expected_position = next((candidate for candidate in range(3) if candidate not in completed_positions), None)
     if position != expected_position:
         return _error("out_of_order", "Submit challenges in order. Refresh the session to continue.", 409)
+    if _rate_limited("answer"):
+        return _rate_limit_error()
     problem = json.loads(challenge.challenge_json)
     try:
         evaluation = review_code_submission(problem, code)
     except Exception:
+        current_app.logger.warning("AI code review failed; saving without a review", exc_info=True)
         evaluation = {"is_correct": None, "score": None,
                       "summary": "Your code was saved, but automated review is unavailable. Your submission remains in history.",
                       "strengths": [], "improvements": [], "show_solution": False, "automated": False}
@@ -860,11 +916,12 @@ def clear_history():
 @require_user
 def analytics():
     user_id = g.current_user.id
-    average = db.session.query(func.avg(Response.score)).filter(Response.user_id == user_id, Response.score.isnot(None)).scalar()
+    visible = (Response.user_id == user_id, Response.score.isnot(None), _visible_score_filter())
+    average = db.session.query(func.avg(Response.score)).join(Interview, Interview.id == Response.interview_id).filter(*visible).scalar()
     per_type = db.session.query(Interview.interview_type, func.avg(Response.score), func.count(Response.id)).join(
-        Response, Response.interview_id == Interview.id).filter(Response.user_id == user_id, Response.score.isnot(None)).group_by(Interview.interview_type).all()
-    daily = db.session.query(func.date(Response.created_at), func.avg(Response.score), func.count(Response.id)).filter(
-        Response.user_id == user_id, Response.score.isnot(None)).group_by(func.date(Response.created_at)).order_by(func.date(Response.created_at)).all()
+        Response, Response.interview_id == Interview.id).filter(*visible).group_by(Interview.interview_type).all()
+    daily = db.session.query(func.date(Response.created_at), func.avg(Response.score), func.count(Response.id)).join(
+        Interview, Interview.id == Response.interview_id).filter(*visible).group_by(func.date(Response.created_at)).order_by(func.date(Response.created_at)).all()
     return jsonify({"average_score": round(float(average), 1) if average is not None else None,
                     "by_type": [{"type": {"round1": "Personal interview", "tech": "Tech interview"}.get(kind, "Coding practice"),
                                  "average": round(float(score), 1), "responses": count} for kind, score, count in per_type],
@@ -897,8 +954,8 @@ def achievements():
     user_id = g.current_user.id
     sessions = Interview.query.filter_by(user_id=user_id).count()
     completed = Interview.query.filter_by(user_id=user_id, status="completed").count()
-    scores = [float(value) for (value,) in db.session.query(Response.score).filter(
-        Response.user_id == user_id, Response.score.isnot(None)).all()]
+    scores = [float(value) for (value,) in db.session.query(Response.score).join(Interview, Interview.id == Response.interview_id).filter(
+        Response.user_id == user_id, Response.score.isnot(None), _visible_score_filter()).all()]
     return jsonify({"achievements": [
         {"id": "first_session", "title": "First practice", "description": "Complete your first practice session.", "unlocked": completed >= 1},
         {"id": "five_sessions", "title": "Consistent practice", "description": "Complete five practice sessions.", "unlocked": completed >= 5},

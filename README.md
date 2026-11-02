@@ -34,11 +34,17 @@ The frontend proxy defaults to `http://127.0.0.1:8000`. Start the API separately
 flask --app backend.app run --port 8000
 ```
 
-The backend uses `DATABASE_URL` when set and otherwise stores local data in `interview.db`. Set `SECRET_KEY` to a random value and optionally set `GROQ_API_KEY` for AI reviews. AI review falls back to a clearly labeled basic response when Groq is unavailable. The coding review is advisory and does not execute submitted code. The provider timeout is configurable with `AI_REVIEW_TIMEOUT_SECONDS`; `GROQ_MODEL` selects a supported Groq model and defaults to `openai/gpt-oss-120b`.
+The backend uses `DATABASE_URL` when set and otherwise stores local data in `interview.db`. Set `SECRET_KEY` to a random value and optionally set `GROQ_API_KEY` for AI reviews. AI review falls back to a clearly labeled basic response when Groq is unavailable. The coding review is advisory and does not execute submitted code. The provider timeout is configurable with `AI_REVIEW_TIMEOUT_SECONDS`; `GROQ_MODEL` selects a supported Groq model and defaults to `openai/gpt-oss-120b`. `GROQ_REASONING_EFFORT` defaults to `low` for gpt-oss models, which uses about 40% fewer tokens per evaluation; set it to `medium` or `high` for deeper reviews, or to an empty value for models without reasoning.
 
-### Voice interviews (ElevenLabs)
+### Tech interviews, voice and face tracking
 
-Set `ELEVAN_LAB_API_KEY` (or `ELEVENLABS_API_KEY`) to turn on voice mode for personal interviews. The interviewer reads each question aloud using ElevenLabs text-to-speech. The candidate can then record a spoken answer, which ElevenLabs speech-to-text transcribes into the answer box. The candidate can edit the transcript before submitting, and the existing AI review scores it. The key stays on the Flask API, and the speech endpoint only voices the fixed interview questions. Optional settings are `ELEVENLABS_VOICE_ID`, `ELEVENLABS_TTS_MODEL` (default `eleven_multilingual_v2`), `ELEVENLABS_STT_MODEL` (default `scribe_v2`) and `VOICE_TIMEOUT_SECONDS`. Without a key, the interview stays text-only.
+Candidates choose a role, level, focus topics, practice or assessment mode, and a format: a hands-free voice call or voice plus text. Groq plans the questions, scores each answer, asks up to three follow-up questions and writes the final report. If Groq is unavailable, the API falls back to a curated question bank and heuristic scores; it does not store a fallback report, so the next visit retries the AI summary.
+
+Set `ELEVAN_LAB_API_KEY` (or `ELEVENLABS_API_KEY`) to turn on voice. ElevenLabs speaks the interviewer's text and transcribes spoken answers. The key stays on the Flask API, and the speech endpoint only voices interviewer text stored with the session. Optional settings are `ELEVENLABS_VOICE_ID`, `ELEVENLABS_TTS_MODEL` (default `eleven_flash_v2_5`, the low-latency model), `ELEVENLABS_STT_MODEL` (default `scribe_v2`) and `VOICE_TIMEOUT_SECONDS`. Without a key, interviews are text-only.
+
+Face tracking uses MediaPipe in the browser; video never leaves the device, and only event types and durations are stored. `npm ci` copies the MediaPipe WebAssembly files into `frontend/public/mediapipe/wasm` (a `postinstall` step), and the face model is committed at `frontend/public/mediapipe/blaze_face_short_range.tflite`.
+
+Paid AI calls are limited per user and per hour (`AI_RATE_LIMITS` in `backend/config.py`; the demo account shares one budget). The provider's own limits apply too: a free Groq key allows 8,000 tokens per minute and 1,000 requests per day for the whole deployment, which is roughly five answer evaluations per minute. Use a paid Groq tier before opening the app to many concurrent users.
 
 ## Production configuration
 

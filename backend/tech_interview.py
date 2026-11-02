@@ -5,9 +5,12 @@ AI provider is unavailable.
 """
 
 import json
+import logging
 import re
 
 from . import ai_service
+
+logger = logging.getLogger(__name__)
 
 ROLES = {
     "frontend": "Frontend Engineer",
@@ -118,6 +121,12 @@ _REACTIONS = {
 }
 
 
+def _log_fallback(action):
+    # Without a configured provider every call falls back by design, so only log real failures.
+    if ai_service.AI_ENABLED:
+        logger.warning("AI %s failed; using the fallback", action, exc_info=True)
+
+
 def role_title(role_key, custom_role=None):
     if role_key == "custom":
         return custom_role
@@ -163,7 +172,7 @@ Interview context: """ + json.dumps(context, ensure_ascii=False)
         if len(plan) >= count:
             return plan[:count], True
     except Exception:
-        pass
+        _log_fallback("interview planning")
     return fallback_plan(role_key, mode), False
 
 
@@ -198,6 +207,7 @@ Turn: """ + json.dumps(context, ensure_ascii=False)
                 "model_answer": model_answer, "reaction": reaction,
                 "follow_up": follow_up if follow_up and len(follow_up) >= 10 else None, "automated": True}
     except Exception:
+        _log_fallback("answer evaluation")
         feedback = ai_service.fallback_interview_feedback("" if skipped else answer)
         return {**feedback, "model_answer": [], "reaction": _REACTIONS[mode][position % 4], "follow_up": None}
 
@@ -255,4 +265,5 @@ Interview: """ + json.dumps(context, ensure_ascii=False)
         return {**base, "summary": summary, "strengths": strengths, "improvements": improvements,
                 "next_steps": next_steps, "automated": True}
     except Exception:
+        _log_fallback("report summary")
         return base

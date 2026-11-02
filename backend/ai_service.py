@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 
 try:
     from groq import Groq
@@ -12,7 +13,12 @@ except Exception:  # The app remains usable when the optional provider is missin
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# Low reasoning effort uses about 40% fewer tokens per evaluation with similar feedback, which matters
+# under per-minute token limits. Only reasoning models accept the parameter.
+REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low" if MODEL_NAME.startswith("openai/gpt-oss") else "").strip()
 AI_ENABLED = bool(GROQ_API_KEY and Groq is not None)
+# One short retry rides out a per-minute provider limit without nearing the proxy timeout.
+RATE_LIMIT_RETRY_SECONDS = 2
 _client = None
 
 
@@ -44,7 +50,27 @@ if AI_ENABLED:
 def _call_model(prompt, temperature=0.2):
     if not AI_ENABLED:
         raise RuntimeError("AI feedback is not configured")
-    response = _client.chat.completions.create(
+    for attempt in range(2):
+        try:
+            response = _create_completion(prompt, temperature)
+            break
+        except Exception as error:
+            if attempt == 0 and type(error).__name__ == "RateLimitError":
+                time.sleep(RATE_LIMIT_RETRY_SECONDS)
+                continue
+            raise
+    choices = getattr(response, "choices", None)
+    message = getattr(choices[0], "message", None) if choices else None
+    content = getattr(message, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("The AI provider returned an empty response")
+    return content
+
+
+def _create_completion(prompt, temperature):
+    extra = {"reasoning_effort": REASONING_EFFORT} if REASONING_EFFORT else {}
+    return _client.chat.completions.create(
+        **extra,
         messages=[
             {
                 "role": "system",
@@ -57,12 +83,6 @@ def _call_model(prompt, temperature=0.2):
         max_completion_tokens=1800,
         response_format={"type": "json_object"},
     )
-    choices = getattr(response, "choices", None)
-    message = getattr(choices[0], "message", None) if choices else None
-    content = getattr(message, "content", None)
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("The AI provider returned an empty response")
-    return content
 
 
 def _parse_json(text):

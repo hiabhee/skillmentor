@@ -87,6 +87,16 @@ class ProctorEvent(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
 
+class RateLimitBucket(db.Model):
+    """Fixed-window counter that limits paid AI requests for each user."""
+
+    __tablename__ = "rate_limit_buckets"
+
+    key_hash = db.Column(db.String(64), primary_key=True)
+    count = db.Column(db.Integer, nullable=False, default=0)
+    window_started_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+
 class CodingChallenge(db.Model):
     __tablename__ = "coding_challenges"
     __table_args__ = (

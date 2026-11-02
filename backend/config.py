@@ -39,6 +39,8 @@ class Config:
     LOGIN_MAX_ATTEMPTS = 8
     LOGIN_WINDOW_SECONDS = 15 * 60
     AI_REVIEW_TIMEOUT_SECONDS = 25
+    # (requests, window in seconds) for each user; the demo account shares one budget.
+    AI_RATE_LIMITS = {"interview": (12, 3600), "answer": (150, 3600), "transcription": (150, 3600)}
     WEB_ORIGINS = tuple(
         origin.strip().rstrip("/")
         for origin in os.getenv(

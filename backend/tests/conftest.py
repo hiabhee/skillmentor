@@ -20,6 +20,7 @@ class TestConfig:
     LOGIN_WINDOW_SECONDS = 900
     WEB_ORIGINS = ("http://localhost:3000",)
     MIGRATIONS_DIR = "backend/migrations"
+    AI_RATE_LIMITS = {"interview": (50, 3600), "answer": (200, 3600), "transcription": (200, 3600)}
 
 
 @pytest.fixture

@@ -75,3 +75,41 @@ def test_model_unavailability_is_explicit():
             ai_service._call_model("ignored")
     finally:
         ai_service.AI_ENABLED = monkeypatch_value
+
+
+def test_model_call_retries_once_after_a_rate_limit(monkeypatch):
+    class RateLimitError(Exception):
+        pass
+
+    class Message:
+        content = '{"ok": true}'
+
+    class Choice:
+        message = Message()
+
+    class Completion:
+        choices = [Choice()]
+
+    calls = []
+    def create(prompt, temperature):
+        calls.append(prompt)
+        if len(calls) == 1:
+            raise RateLimitError("429")
+        return Completion()
+    monkeypatch.setattr(ai_service, "AI_ENABLED", True)
+    monkeypatch.setattr(ai_service, "_create_completion", create)
+    monkeypatch.setattr(ai_service, "RATE_LIMIT_RETRY_SECONDS", 0)
+    assert ai_service._call_model("prompt") == '{"ok": true}'
+    assert len(calls) == 2
+
+
+def test_model_call_does_not_retry_other_errors(monkeypatch):
+    calls = []
+    def create(prompt, temperature):
+        calls.append(prompt)
+        raise TimeoutError("slow")
+    monkeypatch.setattr(ai_service, "AI_ENABLED", True)
+    monkeypatch.setattr(ai_service, "_create_completion", create)
+    with pytest.raises(TimeoutError):
+        ai_service._call_model("prompt")
+    assert len(calls) == 1

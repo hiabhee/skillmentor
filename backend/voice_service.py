@@ -1,7 +1,7 @@
 """ElevenLabs speech boundary: question text to speech and answer audio to text.
 
-The API key stays on the server. Callers only ever send fixed question positions
-for synthesis, so the endpoint cannot be used to voice arbitrary text.
+The API key stays on the server. Only interviewer text stored with a session is
+synthesized, so the endpoint cannot be used to voice arbitrary text.
 """
 
 import json
@@ -10,18 +10,21 @@ import secrets
 import threading
 import urllib.error
 import urllib.request
+from collections import OrderedDict
 
 API_BASE = os.getenv("ELEVENLABS_API_BASE", "https://api.elevenlabs.io").rstrip("/")
 # The project's .env uses ELEVAN_LAB_API_KEY; the conventional name is accepted too.
 API_KEY = (os.getenv("ELEVAN_LAB_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or "").strip()
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
-TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
+# Flash is ElevenLabs' low-latency model for live conversation (about 1.5 s for a question).
+TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
 STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
 VOICE_ENABLED = bool(API_KEY)
 
 ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/aac"}
 
-_speech_cache = {}
+_speech_cache = OrderedDict()
+SPEECH_CACHE_ENTRIES = 256
 _cache_lock = threading.Lock()
 
 
@@ -51,10 +54,11 @@ def _send(request):
 
 
 def synthesize(text):
-    """Return MP3 bytes for text. Results are cached because questions are fixed."""
+    """Return MP3 bytes for text. Recent results are cached because candidates replay questions."""
     key = (VOICE_ID, TTS_MODEL, text)
     with _cache_lock:
         if key in _speech_cache:
+            _speech_cache.move_to_end(key)
             return _speech_cache[key]
     body = json.dumps({"text": text, "model_id": TTS_MODEL}).encode("utf-8")
     request = urllib.request.Request(
@@ -67,6 +71,8 @@ def synthesize(text):
         raise VoiceError("ElevenLabs returned empty audio")
     with _cache_lock:
         _speech_cache[key] = audio
+        while len(_speech_cache) > SPEECH_CACHE_ENTRIES:
+            _speech_cache.popitem(last=False)
     return audio
 
 
