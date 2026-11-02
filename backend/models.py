@@ -19,6 +19,8 @@ class User(db.Model):
     full_name = db.Column(db.String(160))
     bio = db.Column(db.Text)
     profile_photo_path = db.Column(db.String(500))
+    # Last-used interview setup and voice settings (JSON), so choices follow the account, not the browser.
+    interview_prefs = db.Column(db.Text)
 
 
 class Interview(db.Model):
@@ -74,6 +76,19 @@ class InterviewQuestion(db.Model):
     intro = db.Column(db.Text)
     is_follow_up = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    # When the candidate was actually given the question; assessment answer time counts from here.
+    asked_at = db.Column(db.DateTime)
+
+
+class AnswerDraft(db.Model):
+    """Unsubmitted answer or code for the current question, so a refresh or device switch loses nothing."""
+
+    __tablename__ = "answer_drafts"
+
+    interview_id = db.Column(db.Integer, db.ForeignKey("interviews.id", ondelete="CASCADE"), primary_key=True)
+    position = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class ProctorEvent(db.Model):

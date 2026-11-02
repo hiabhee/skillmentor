@@ -20,8 +20,8 @@ from .ai_service import (
 )
 from . import ai_service, telemetry, tech_interview, voice_service
 from .extensions import db
-from .models import (AuthSession, CodingChallenge, Interview, InterviewQuestion, LoginAttempt, ProctorEvent,
-                     RateLimitBucket, Response, User, utcnow)
+from .models import (AnswerDraft, AuthSession, CodingChallenge, Interview, InterviewQuestion, LoginAttempt,
+                     ProctorEvent, RateLimitBucket, Response, User, utcnow)
 
 api = Blueprint("api", __name__)
 
@@ -79,6 +79,86 @@ def _rate_limited(scope):
 
 def _rate_limit_error():
     return _error("rate_limited", "You have reached the hourly limit for this action. Try again later.", 429)
+
+
+PREF_DEFAULTS = {"role": "backend", "custom_role": "", "level": "mid", "mode": "practice", "focus": [],
+                 "voice_only": True, "camera": True, "autoplay": True}
+_PREF_CHECKS = {
+    "role": lambda v: v in tech_interview.ROLES or v == "custom",
+    "custom_role": lambda v: isinstance(v, str) and len(v.strip()) <= tech_interview.MAX_CUSTOM_ROLE_LENGTH,
+    "level": lambda v: v in tech_interview.LEVELS,
+    "mode": lambda v: v in tech_interview.MODES,
+    "focus": lambda v: isinstance(v, list) and len(v) <= tech_interview.MAX_FOCUS_AREAS
+    and all(isinstance(item, str) and 1 <= len(item.strip()) <= 60 for item in v),
+    "voice_only": lambda v: isinstance(v, bool),
+    "camera": lambda v: isinstance(v, bool),
+    "autoplay": lambda v: isinstance(v, bool),
+}
+
+
+def _clean_prefs(data):
+    """Validate a partial preferences update. Returns (valid fields, name of the first invalid field)."""
+    clean, invalid = {}, None
+    for key, check in _PREF_CHECKS.items():
+        if key not in data:
+            continue
+        value = data[key]
+        try:
+            valid = check(value)
+        except TypeError:  # Unhashable values such as lists in a membership test.
+            valid = False
+        if not valid:
+            invalid = invalid or key
+        elif isinstance(value, str):
+            clean[key] = value.strip()
+        elif isinstance(value, list):
+            clean[key] = [item.strip() for item in value]
+        else:
+            clean[key] = value
+    return clean, invalid
+
+
+def _load_prefs(user):
+    try:
+        stored = json.loads(user.interview_prefs or "{}")
+    except ValueError:
+        stored = {}
+    clean, _invalid = _clean_prefs(stored if isinstance(stored, dict) else {})
+    return {**PREF_DEFAULTS, **clean}
+
+
+def _save_prefs(user, updates):
+    prefs = {**_load_prefs(user), **updates}
+    user.interview_prefs = json.dumps(prefs, ensure_ascii=False)
+    return prefs
+
+
+def _open_position(interview):
+    """The question or challenge the candidate should answer next, or None when nothing is open."""
+    if interview.status == "completed":
+        return None
+    answered = {position for (position,) in db.session.query(Response.question_position).filter_by(interview_id=interview.id)}
+    if interview.interview_type == "tech":
+        asked = [position for (position,) in db.session.query(InterviewQuestion.position).filter_by(interview_id=interview.id)]
+        return next((position for position in sorted(asked) if position not in answered), None)
+    if interview.interview_type == "round1":
+        return next((position for position in range(len(ROUND1_QUESTIONS)) if position not in answered), None)
+    challenges = [position for (position,) in db.session.query(CodingChallenge.position).filter_by(interview_id=interview.id)]
+    return next((position for position in sorted(challenges) if position not in answered), None)
+
+
+def _clear_draft(interview_id, position):
+    AnswerDraft.query.filter_by(interview_id=interview_id, position=position).delete()
+
+
+def _seconds_left(interview, question):
+    """Server-side answer clock for assessments; refreshing the page never resets it."""
+    if interview.mode != "assessment":
+        return None
+    if question.asked_at is None:
+        return ASSESSMENT_ANSWER_SECONDS
+    elapsed = (utcnow() - question.asked_at).total_seconds()
+    return max(0, int(ASSESSMENT_ANSWER_SECONDS - elapsed))
 
 
 def _public_type(interview_type):
@@ -436,6 +516,31 @@ def admin_metrics():
     return jsonify(telemetry.summarize(days))
 
 
+@api.get("/interview-options")
+@require_user
+def interview_options():
+    """Everything the setup screen shows that the server decides, plus the user's saved choices."""
+    modes = {mode: {"questions": tech_interview.QUESTION_COUNT[mode], "minutes": tech_interview.SESSION_MINUTES[mode],
+                    "answer_seconds": ASSESSMENT_ANSWER_SECONDS if mode == "assessment" else 0,
+                    "camera_required": mode == "assessment"} for mode in sorted(tech_interview.MODES)}
+    return jsonify({"modes": modes, "max_focus": tech_interview.MAX_FOCUS_AREAS,
+                    "voice_available": voice_service.VOICE_ENABLED, "preferences": _load_prefs(g.current_user)})
+
+
+@api.put("/preferences")
+@require_user
+def update_preferences():
+    data = _json_body()
+    if not isinstance(data, dict):
+        return _error("invalid_json", "Send a JSON request body.", 400)
+    clean, invalid = _clean_prefs(data)
+    if invalid:
+        return _error("invalid_preferences", f"The {invalid.replace('_', ' ')} setting is invalid.", 400)
+    prefs = _save_prefs(g.current_user, clean)
+    db.session.commit()
+    return jsonify({"preferences": prefs})
+
+
 @api.get("/capabilities")
 @require_user
 def capabilities():
@@ -515,6 +620,14 @@ def _create_tech_interview(data):
         return _rate_limit_error()
     role = tech_interview.role_title(role_key, custom_role.strip() if isinstance(custom_role, str) else "")
     focus = " ".join(focus.split())
+    remembered, _invalid = _clean_prefs({
+        "role": role_key, "custom_role": custom_role if isinstance(custom_role, str) else "", "level": level, "mode": mode,
+        "focus": [item.strip() for item in focus.split(",") if item.strip()][:tech_interview.MAX_FOCUS_AREAS],
+        "voice_only": voice_only, **({"camera": proctored} if mode == "practice" else {}),
+    })
+    _save_prefs(g.current_user, remembered)
+    # Voice-only needs server speech; never trust the browser's view of what is configured.
+    voice_only = voice_only and voice_service.VOICE_ENABLED
     plan, _generated = tech_interview.plan_interview(role, level, focus, mode, role_key)
     interview = Interview(user_id=g.current_user.id, interview_type="tech", difficulty=level, role=role, level=level,
                           mode=mode, voice_only=voice_only, proctored=proctored or mode == "assessment",
@@ -558,7 +671,8 @@ def _tech_payload(interview):
         if answered is None:
             current = {"position": item.position, "question": item.question, "category": item.category,
                        "category_label": tech_interview.CATEGORIES.get(item.category, item.category),
-                       "intro": item.intro, "is_follow_up": item.is_follow_up, "number": main_seen, "total": main_total}
+                       "intro": item.intro, "is_follow_up": item.is_follow_up, "number": main_seen, "total": main_total,
+                       "started": item.asked_at is not None, "seconds_left": _seconds_left(interview, item)}
             continue
         feedback = json.loads(answered.feedback) if answered.feedback else None
         turns.append({"id": answered.id, "position": item.position, "question": item.question, "category": item.category,
@@ -614,7 +728,59 @@ def get_interview(interview_id):
             challenge = challenges[next_position]
             result["next_challenge"] = {"position": challenge.position, "total": len(challenges),
                                         "challenge": _public_challenge(json.loads(challenge.challenge_json))}
+    open_position = _open_position(interview)
+    draft = db.session.get(AnswerDraft, (interview.id, open_position)) if open_position is not None else None
+    result["draft"] = {"position": open_position, "text": draft.text} if draft else None
     return jsonify({"interview": result})
+
+
+@api.put("/interviews/<int:interview_id>/draft")
+@require_user
+def save_draft(interview_id):
+    """Autosave the unsubmitted answer (or code) for the open question."""
+    interview = _get_owned_interview(interview_id)
+    if not interview:
+        return _error("not_found", "Interview not found.", 404)
+    data = _json_body()
+    if data is None:
+        return _error("invalid_json", "Send a JSON request body.", 400)
+    position, text = data.get("position"), data.get("text")
+    if not isinstance(position, int) or isinstance(position, bool) or not isinstance(text, str):
+        return _error("invalid_draft", "Send the question position and draft text.", 400)
+    limit = MAX_CODE_LENGTH if interview.interview_type not in {"tech", "round1"} else MAX_ANSWER_LENGTH
+    if len(text) > limit:
+        return _error("draft_too_long", f"Drafts must be at most {limit:,} characters.", 413)
+    if position != _open_position(interview):
+        return _error("stale_draft", "This question was already answered. Refresh to continue.", 409)
+    draft = db.session.get(AnswerDraft, (interview.id, position))
+    if not text.strip():
+        if draft:
+            db.session.delete(draft)
+    elif draft:
+        draft.text = text
+    else:
+        db.session.add(AnswerDraft(interview_id=interview.id, position=position, text=text))
+    try:
+        db.session.commit()
+    except IntegrityError:  # A parallel autosave created it first; the next save updates it.
+        db.session.rollback()
+    return jsonify({"saved": True})
+
+
+@api.post("/interviews/<int:interview_id>/join")
+@require_user
+def join_interview(interview_id):
+    """Mark the open question as asked, which starts the assessment answer clock exactly once."""
+    interview = _get_owned_interview(interview_id)
+    if not interview or interview.interview_type != "tech":
+        return _error("not_found", "Interview not found.", 404)
+    position = _open_position(interview)
+    if position is not None:
+        question = InterviewQuestion.query.filter_by(interview_id=interview.id, position=position).first()
+        if question and question.asked_at is None:
+            question.asked_at = utcnow()
+            db.session.commit()
+    return jsonify({"joined": True})
 
 
 @api.post("/interviews/<int:interview_id>/answers")
@@ -653,6 +819,7 @@ def submit_interview_answer(interview_id):
     response = Response(user_id=g.current_user.id, interview_id=interview.id, question=question,
                         answer=stored_answer, feedback=feedback_text, score=feedback["score"], question_position=position)
     db.session.add(response)
+    _clear_draft(interview.id, position)
     if position + 1 == len(ROUND1_QUESTIONS):
         interview.status = "completed"
     try:
@@ -763,19 +930,21 @@ def submit_tech_turn(interview_id):
     db.session.add(Response(user_id=g.current_user.id, interview_id=interview.id, question=current.question,
                             answer=stored_answer, feedback=json.dumps(feedback, ensure_ascii=False),
                             score=feedback["score"], question_position=current.position))
-    if interview.mode == "assessment" and current.position > 0 and current.created_at:
-        overtime = (utcnow() - current.created_at).total_seconds() - ASSESSMENT_ANSWER_SECONDS - ASSESSMENT_GRACE_SECONDS
+    _clear_draft(interview.id, current.position)
+    if interview.mode == "assessment" and current.asked_at:
+        overtime = (utcnow() - current.asked_at).total_seconds() - ASSESSMENT_ANSWER_SECONDS - ASSESSMENT_GRACE_SECONDS
         if overtime > 0:
             db.session.add(ProctorEvent(interview_id=interview.id, kind="late_answer",
                                         duration_ms=min(int(overtime * 1000), 3_600_000), question_position=current.position))
     next_item = None
     if follow_up:
         next_item = InterviewQuestion(interview_id=interview.id, position=current.position + 1, question=follow_up,
-                                      category=current.category, intro=reaction, is_follow_up=True)
+                                      category=current.category, intro=reaction, is_follow_up=True, asked_at=utcnow())
     elif main_asked < len(plan):
         upcoming = plan[main_asked]
         next_item = InterviewQuestion(interview_id=interview.id, position=current.position + 1, question=upcoming["question"],
-                                      category=upcoming["category"], intro=f"{reaction} Next question.", is_follow_up=False)
+                                      category=upcoming["category"], intro=f"{reaction} Next question.", is_follow_up=False,
+                                      asked_at=utcnow())
     else:
         interview.status = "completed"
     if next_item:
@@ -887,6 +1056,7 @@ def submit_code(interview_id):
                         answer=code, feedback=json.dumps(evaluation, ensure_ascii=False), score=score,
                         question_position=position)
     db.session.add(response)
+    _clear_draft(interview.id, position)
     if position == 2:
         interview.status = "completed"
     try:

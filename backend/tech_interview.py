@@ -33,6 +33,9 @@ CATEGORIES = {
     "experience": "Experience & collaboration",
 }
 QUESTION_COUNT = {"practice": 6, "assessment": 8}
+# Typical session length shown to candidates before they start.
+SESSION_MINUTES = {"practice": 15, "assessment": 25}
+MAX_FOCUS_AREAS = 3
 MAX_FOLLOW_UPS = 3
 MAX_FOCUS_LENGTH = 200
 MAX_CUSTOM_ROLE_LENGTH = 60
@@ -198,9 +201,11 @@ Turn: """ + json.dumps(context, ensure_ascii=False)
             raise ValueError("score out of range")
         strengths = [ai_service._text(item, "strength") for item in data.get("strengths", [])[:2]]
         improvements = [ai_service._text(item, "improvement") for item in data.get("improvements", [])[:3]]
-        if not strengths or not improvements:
+        # A strong answer may have nothing to improve, and a weak one nothing to praise; both empty is unusable.
+        if not strengths and not improvements:
             raise ValueError("incomplete feedback")
-        model_answer = [_clean(item, 300) for item in data.get("model_answer", [])[:4] if isinstance(item, str) and item.strip()]
+        model_answer = [_clean(ai_service._BULLET.sub("", item), 300) for item in data.get("model_answer", [])[:4]
+                        if isinstance(item, str) and ai_service._BULLET.sub("", item).strip()]
         reaction = _clean(data.get("reaction") if isinstance(data.get("reaction"), str) else "", 160) or _REACTIONS[mode][position % 4]
         follow_up = data.get("follow_up")
         follow_up = _clean(follow_up, 300) if isinstance(follow_up, str) and follow_up_allowed and not skipped else None

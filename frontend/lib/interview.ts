@@ -23,7 +23,12 @@ export const LEVELS: { key: Level; title: string; years: string }[] = [
 ];
 
 export type Feedback = { score?: number; summary?: string; strengths?: string[]; improvements?: string[]; model_answer?: string[]; automated?: boolean };
-export type CurrentQuestion = { position: number; question: string; category: string; category_label: string; intro: string | null; is_follow_up: boolean; number: number; total: number };
+export type CurrentQuestion = {
+  position: number; question: string; category: string; category_label: string; intro: string | null; is_follow_up: boolean; number: number; total: number;
+  /** Whether the server has started this question's clock. */ started: boolean;
+  /** Assessment answer time left, computed by the server; null in practice mode. */ seconds_left: number | null;
+};
+export type Draft = { position: number; text: string } | null;
 export type Turn = { id: number; position: number; question: string; category: string; category_label: string; is_follow_up: boolean; answer: string; feedback: string | null; score: number | null };
 export type Integrity = { monitored: boolean; warnings: number; status: "clean" | "minor" | "flagged"; events: Record<string, { count: number; seconds: number }> };
 export type Report = { overall_score: number; verdict: string; summary: string; competencies: { key: string; name: string; score: number; note: string }[]; strengths: string[]; improvements: string[]; next_steps?: string[]; integrity: Integrity; automated: boolean };
@@ -31,10 +36,20 @@ export type TechSession = {
   id: number; type: "tech"; status: string; created_at: string; voice_enabled: boolean;
   role: string; level: Level; level_label: string; mode: Mode; voice_only: boolean; proctored: boolean; focus: string;
   current_question: CurrentQuestion | null; answered_main: number; total_main: number; turns: Turn[]; report: Report | null; integrity: Integrity;
+  draft: Draft;
 };
 export type TurnResult = { feedback: Feedback | null; reaction: string; completed: boolean; closing: string | null };
 
-export const QUESTION_SECONDS: Record<Mode, number> = { practice: 0, assessment: 180 };
+export type ModeRules = { questions: number; minutes: number; answer_seconds: number; camera_required: boolean };
+export type Preferences = { role: RoleKey; custom_role: string; level: Level; mode: Mode; focus: string[]; voice_only: boolean; camera: boolean; autoplay: boolean };
+/** Setup rules decided by the server, plus the account's saved choices. */
+export type InterviewOptions = { modes: Record<Mode, ModeRules>; max_focus: number; voice_available: boolean; preferences: Preferences };
+export const OPTIONS_PATH = "/interview-options";
+
+/** Playback interrupted by pause() or a new source is expected, not an error worth showing. */
+export function isPlaybackInterruption(cause: unknown) {
+  return cause instanceof DOMException && cause.name === "AbortError";
+}
 
 export function scoreTone(score: number | null | undefined) {
   if (score == null) return "neutral";

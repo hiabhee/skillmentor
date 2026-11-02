@@ -112,10 +112,17 @@ def _parse_json(text):
         return value
 
 
+_BULLET = re.compile(r"^\s*(?:[-*\u2022\u2013]+|\d{1,2}[.)])\s+")
+
+
 def _text(value, name, minimum=1):
-    if not isinstance(value, str) or len(value.strip()) < minimum:
+    """Validate one model-written string and drop list markers the model sometimes adds ("- ", "1. ")."""
+    if not isinstance(value, str):
         raise ValueError(f"Invalid or missing {name}")
-    return value.strip()
+    value = _BULLET.sub("", value).strip()
+    if len(value) < minimum:
+        raise ValueError(f"Invalid or missing {name}")
+    return value
 
 
 def review_interview_answer(question, answer):

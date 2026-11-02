@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { CurrentQuestion, TurnResult } from "@/lib/interview";
+import { type CurrentQuestion, isPlaybackInterruption, type TurnResult } from "@/lib/interview";
 import { EndOfSpeechDetector, preferredMimeType, questionAudioUrl, rms, transcribe } from "@/lib/voice";
 
 export type CallPhase = "connecting" | "speaking" | "listening" | "thinking" | "ended";
@@ -105,7 +105,11 @@ export function useVoiceCall({ interviewId, question, active, micStream, maxAnsw
     setPhase("speaking");
     audio.onended = () => listen(questionPosition);
     audio.onerror = () => { setNotice("The interviewer's voice is unavailable right now."); listen(questionPosition); };
-    audio.play().catch(() => { setNotice("Tap “Repeat question” to hear the interviewer."); listen(questionPosition); });
+    audio.play().catch((cause) => {
+      // Paused because the question changed or the call ended: the next question starts its own loop.
+      if (isPlaybackInterruption(cause) || audioRef.current !== audio) return;
+      setNotice("Tap “Repeat question” to hear the interviewer."); listen(questionPosition);
+    });
   }, [interviewId, listen]);
 
   useEffect(() => {

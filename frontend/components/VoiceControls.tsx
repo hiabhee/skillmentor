@@ -1,20 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { Loader2, Mic, Square, Volume2, VolumeX } from "lucide-react";
+import { api } from "@/lib/api";
+import { type InterviewOptions, isPlaybackInterruption, OPTIONS_PATH, type Preferences } from "@/lib/interview";
 import { preferredMimeType, questionAudioUrl, transcribe } from "@/lib/voice";
 
 const MAX_RECORDING_SECONDS = 180;
-const AUTOPLAY_KEY = "skillmentor_voice_autoplay";
-
-function readAutoplay() {
-  try { return typeof window === "undefined" || window.localStorage.getItem(AUTOPLAY_KEY) !== "off"; } catch { return true; }
-}
 
 type Props = { interviewId: number; position: number; disabled: boolean; onTranscript: (text: string) => void };
 
 export function VoiceControls({ interviewId, position, disabled, onTranscript }: Props) {
-  const [autoplay, setAutoplay] = useState(readAutoplay);
+  // Auto-play is an account setting, so it follows the user across browsers and devices.
+  const { data: options, mutate } = useSWR<InterviewOptions>(OPTIONS_PATH, (path: string) => api<InterviewOptions>(path));
+  const autoplay = options?.preferences.autoplay ?? true;
+  const autoplayed = useRef(false);
   const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -36,7 +37,9 @@ export function VoiceControls({ interviewId, position, disabled, onTranscript }:
     audio.onerror = () => { setSpeaking(false); setError("The interviewer voice is unavailable. Read the question instead."); };
     try { setSpeaking(true); await audio.play(); }
     catch (cause) {
-      setSpeaking(false);
+      if (audioRef.current === audio) setSpeaking(false);
+      // Stopped on purpose (new question, Stop, leaving the page): not a failure.
+      if (isPlaybackInterruption(cause)) return;
       // Browsers block autoplay before the first interaction; the play button stays available.
       if (!(quietOnBlock && cause instanceof DOMException && cause.name === "NotAllowedError")) setError("The question could not be played.");
     }
@@ -50,17 +53,26 @@ export function VoiceControls({ interviewId, position, disabled, onTranscript }:
   }, []);
 
   useEffect(() => {
-    // Read once per question (the component is keyed by position); toggling never replays.
-    if (readAutoplay()) void speak(true);
-    return () => audioRef.current?.pause();
-  }, [speak]);
+    // Read once per question (the component is keyed by position) after the saved setting loads; toggling never replays.
+    if (!options || autoplayed.current) return;
+    autoplayed.current = true;
+    if (options.preferences.autoplay) void speak(true);
+  }, [options, speak]);
+  useEffect(() => () => audioRef.current?.pause(), []);
 
   useEffect(() => () => { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); releaseMic(); }, [releaseMic]);
 
-  function toggleAutoplay() {
-    const next = !autoplay; setAutoplay(next);
-    try { window.localStorage.setItem(AUTOPLAY_KEY, next ? "on" : "off"); } catch { /* preference is optional */ }
+  async function toggleAutoplay() {
+    if (!options) return;
+    const loaded = options;
+    const next = !autoplay;
     if (!next) stopSpeaking();
+    // Show the change at once, then confirm with the server's saved value (or roll back on failure).
+    await mutate(async (current) => {
+      const saved = await api<{ preferences: Preferences }>("/preferences", { method: "PUT", body: JSON.stringify({ autoplay: next }) });
+      return { ...(current ?? loaded), preferences: saved.preferences };
+    }, { optimisticData: (current) => ({ ...(current ?? loaded), preferences: { ...(current ?? loaded).preferences, autoplay: next } }), rollbackOnError: true, revalidate: false })
+      .catch(() => setError("Couldn't save the auto-play setting."));
   }
 
   async function upload(blob: Blob) {
@@ -108,7 +120,7 @@ export function VoiceControls({ interviewId, position, disabled, onTranscript }:
       {supported && (recording
         ? <button type="button" className="button primary voice-recording" onClick={stopRecording}><Square size={13} />Stop · {clock}</button>
         : <button type="button" className="button secondary" onClick={() => void startRecording()} disabled={disabled || transcribing}>{transcribing ? <><Loader2 size={14} className="spin" />Transcribing…</> : <><Mic size={14} />Answer by voice</>}</button>)}
-      <button type="button" className="voice-toggle" onClick={toggleAutoplay} aria-pressed={autoplay}>{autoplay ? <Volume2 size={12} /> : <VolumeX size={12} />}{autoplay ? "Auto-play on" : "Auto-play off"}</button>
+      <button type="button" className="voice-toggle" onClick={() => void toggleAutoplay()} disabled={!options} aria-pressed={autoplay}>{autoplay ? <Volume2 size={12} /> : <VolumeX size={12} />}{autoplay ? "Auto-play on" : "Auto-play off"}</button>
     </div>
     <p className="voice-hint">{supported ? `Speak your answer (up to ${MAX_RECORDING_SECONDS / 60} minutes). The transcript appears below so you can edit it before submitting.` : "Voice answers aren't supported in this browser. You can still listen to the question and type your answer."}</p>
     {error && <span className="inline-error" role="alert">{error}</span>}

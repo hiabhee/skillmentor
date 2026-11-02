@@ -4,7 +4,8 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, AudioLines, Check, CircleAlert, Headphones, Keyboard, Lightbulb, Loader2, Mic, PhoneOff, RotateCcw, ScanFace, ShieldCheck, SkipForward, Timer, Video } from "lucide-react";
 import { api } from "@/lib/api";
-import { type Feedback, QUESTION_SECONDS, type TechSession as Session, type TurnResult } from "@/lib/interview";
+import { draftLabel, useDraft } from "@/lib/draft";
+import { type Feedback, type TechSession as Session, type Turn, type TurnResult } from "@/lib/interview";
 import { ISSUE_COPY } from "@/lib/proctor";
 import { VoiceControls } from "@/components/VoiceControls";
 import { InterviewerOrb } from "./InterviewerOrb";
@@ -18,7 +19,7 @@ export function TechSession({ session, refresh }: { session: Session; refresh: (
   const [devices, setDevices] = useState<Devices | null>(null);
   useEffect(() => () => { devices?.camera?.getTracks().forEach((track) => track.stop()); devices?.mic?.getTracks().forEach((track) => track.stop()); }, [devices]);
   if (session.status === "completed") return <TechReport session={session} refresh={refresh} />;
-  if (!devices) return <Lobby session={session} onJoin={setDevices} />;
+  if (!devices) return <Lobby session={session} refresh={refresh} onJoin={setDevices} />;
   return <LiveRoom session={session} devices={devices} refresh={refresh} />;
 }
 
@@ -26,13 +27,14 @@ function SessionTags({ session }: { session: Session }) {
   return <div className="tech-tags"><span className={`mode-pill ${session.mode}`}>{session.mode === "assessment" ? "Assessment" : "Practice"}</span><span>{session.level_label}</span><span>{session.voice_only ? "Voice call" : "Voice + text"}</span>{session.proctored && <span><ScanFace size={12} />Camera on</span>}</div>;
 }
 
-function Lobby({ session, onJoin }: { session: Session; onJoin: (devices: Devices) => void }) {
+function Lobby({ session, refresh, onJoin }: { session: Session; refresh: () => Promise<unknown>; onJoin: (devices: Devices) => void }) {
   const needsMic = session.voice_only;
   const wantsMic = session.voice_enabled;
   const [camera, setCamera] = useState<MediaStream | null>(null);
   const [mic, setMic] = useState<MediaStream | null>(null);
   const [error, setError] = useState("");
   const [level, setLevel] = useState(0);
+  const [joining, setJoining] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const handedOff = useRef(false);
 
@@ -58,6 +60,16 @@ function Lobby({ session, onJoin }: { session: Session; onJoin: (devices: Device
   }
 
   const ready = (!session.proctored || camera) && (!needsMic || mic);
+
+  async function join() {
+    setJoining(true); setError("");
+    try {
+      // The server starts the answer clock here, once; a reload or rejoin continues it instead of resetting it.
+      await api(`/interviews/${session.id}/join`, { method: "POST" });
+      await refresh();
+      handedOff.current = true; onJoin({ camera, mic });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "We couldn't join the interview."); setJoining(false); }
+  }
   const q = session.current_question;
   const resuming = (q?.position ?? 0) > 0;
   return <div className="lobby">
@@ -81,33 +93,34 @@ function Lobby({ session, onJoin }: { session: Session; onJoin: (devices: Device
         <p className="lobby-lede">{session.voice_only ? "This is a hands-free voice call. Alex asks each question out loud, listens while you answer, and moves on when you pause." : "Alex reads each question aloud. Answer by voice or by typing, then submit."}{session.mode === "assessment" ? " Scores stay hidden until you finish." : " You'll get coaching after every answer."}</p>
         <ol className="lobby-rules">
           <li><span>{session.total_main}</span>questions{resuming ? `, resuming at question ${q?.number ?? 1}` : ""}</li>
-          {session.mode === "assessment" && <li><Timer size={14} />{QUESTION_SECONDS.assessment / 60} minutes per answer</li>}
+          {q?.seconds_left != null && <li><Timer size={14} />{q.started ? `${clock(q.seconds_left)} left on this answer` : `${Math.round(q.seconds_left / 60)} minutes per answer`}</li>}
           {session.proctored && <li><ShieldCheck size={14} />Face tracking runs only in your browser. Video is never uploaded.</li>}
           {session.voice_only && <li><AudioLines size={14} />Pause for about two seconds when you finish an answer</li>}
         </ol>
         {error && <div className="notice error-notice">{error}</div>}
         <div className="lobby-actions">
           {!ready || (wantsMic && !mic) ? <button className="button secondary" onClick={() => void enable()}><Video size={15} />Turn on {session.proctored ? (wantsMic ? "camera & mic" : "camera") : "microphone"}</button> : null}
-          <button className="button primary join-button" disabled={!ready} onClick={() => { handedOff.current = true; onJoin({ camera, mic }); }}>{resuming ? "Rejoin interview" : "Join interview"}<ArrowRight size={16} /></button>
+          <button className="button primary join-button" disabled={!ready || joining} onClick={() => void join()}>{joining ? <><Loader2 size={15} className="spin" />Joining…</> : <>{resuming ? "Rejoin interview" : "Join interview"}<ArrowRight size={16} /></>}</button>
         </div>
       </section>
     </div>
   </div>;
 }
 
-function useCountdown(key: number | null, seconds: number, onExpire: () => void) {
-  const [left, setLeft] = useState(seconds);
+/** Counts down from the server's remaining time; each refetch re-syncs it, so a reload never adds time. */
+function useCountdown(key: number | null, seconds: number | null, onExpire: () => void) {
+  const [left, setLeft] = useState(seconds ?? 0);
   const expire = useRef(onExpire);
   useEffect(() => { expire.current = onExpire; }, [onExpire]);
   useEffect(() => {
-    if (!seconds || key == null) return;
+    if (seconds == null || key == null) return;
     const deadline = Date.now() + seconds * 1000;
     const timer = setInterval(() => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setLeft(remaining);
       if (remaining === 0) { clearInterval(timer); expire.current(); }
     }, 500);
-    return () => { clearInterval(timer); setLeft(seconds); };
+    return () => { clearInterval(timer); setLeft(seconds ?? 0); };
   }, [key, seconds]);
   return left;
 }
@@ -117,15 +130,12 @@ const PHASE_LABEL: Record<CallPhase, string> = { connecting: "Connecting…", sp
 
 function LiveRoom({ session, devices, refresh }: { session: Session; devices: Devices; refresh: () => Promise<unknown> }) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const [last, setLast] = useState<{ question: string; feedback: Feedback | null; reaction: string } | null>(null);
   const question = session.current_question;
+  const last = lastFeedback(session);
   const proctor = useProctor({ enabled: session.proctored && !!devices.camera, video, interviewId: session.id, position: question?.position ?? null });
   useEffect(() => { if (video && devices.camera) video.srcObject = devices.camera; }, [video, devices.camera]);
 
-  const onTurn = useCallback(async (result: TurnResult) => {
-    if (question) setLast({ question: question.question, feedback: result.feedback, reaction: result.reaction });
-    await refresh();
-  }, [question, refresh]);
+  const onTurn = useCallback(async () => { await refresh(); }, [refresh]);
 
   const progress = session.total_main ? ((question ? question.number - 1 : session.total_main) / session.total_main) * 100 : 0;
   const warning = proctor.warning ? ISSUE_COPY[proctor.warning] : null;
@@ -139,7 +149,7 @@ function LiveRoom({ session, devices, refresh }: { session: Session; devices: De
     <div className="live-grid">
       {session.voice_only
         ? <VoiceStage session={session} mic={devices.mic} onTurn={onTurn} />
-        : <TextStage session={session} onTurn={onTurn} last={last} />}
+        : <TextStage key={question?.position ?? -1} session={session} onTurn={onTurn} last={last} />}
       <aside className="live-side">
         {session.proctored && <div className={`self-view ${proctor.warning ? "warn" : ""}`}><video ref={setVideo} autoPlay playsInline muted /><span className={`face-pill ${proctor.status}`}>{proctor.status === "watching" ? (proctor.warning ? <><CircleAlert size={12} />Check position</> : <><ScanFace size={12} />Face tracked</>) : proctor.status === "error" ? "Tracking unavailable" : <><Loader2 size={12} className="spin" />Starting tracking</>}</span></div>}
         <div className="panel live-panel">
@@ -156,7 +166,7 @@ function LiveRoom({ session, devices, refresh }: { session: Session; devices: De
 
 function VoiceStage({ session, mic, onTurn }: { session: Session; mic: MediaStream | null; onTurn: (result: TurnResult) => Promise<unknown> }) {
   const question = session.current_question;
-  const maxSeconds = QUESTION_SECONDS[session.mode] || 300;
+  const maxSeconds = question?.seconds_left ?? 300;
   const call = useVoiceCall({ interviewId: session.id, question, active: true, micStream: mic, maxAnswerSeconds: maxSeconds, onTurn });
   return <section className="stage voice-stage">
     <div className="stage-glow" />
@@ -173,9 +183,20 @@ function VoiceStage({ session, mic, onTurn }: { session: Session; mic: MediaStre
   </section>;
 }
 
-function TextStage({ session, onTurn, last }: { session: Session; onTurn: (result: TurnResult) => Promise<unknown>; last: { question: string; feedback: Feedback | null; reaction: string } | null }) {
+type LastFeedbackData = { question: string; feedback: Feedback };
+
+/** Feedback on the most recent answer, from the server's saved turns so it survives a reload. */
+function lastFeedback(session: Session): LastFeedbackData | null {
+  const turn: Turn | undefined = session.turns[session.turns.length - 1];
+  if (!turn?.feedback || session.mode !== "practice") return null;
+  try { return { question: turn.question, feedback: JSON.parse(turn.feedback) as Feedback }; } catch { return null; }
+}
+
+function TextStage({ session, onTurn, last }: { session: Session; onTurn: (result: TurnResult) => Promise<unknown>; last: LastFeedbackData | null }) {
   const question = session.current_question;
-  const [answer, setAnswer] = useState("");
+  const position = question?.position ?? null;
+  const draft = useDraft(session.id, position, session.draft && session.draft.position === position ? session.draft.text : "");
+  const { text: answer, setText: setAnswer, clear: clearDraft } = draft;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const answerRef = useRef(answer);
@@ -187,33 +208,33 @@ function TextStage({ session, onTurn, last }: { session: Session; onTurn: (resul
     setPending(true); setError("");
     try {
       const result = await api<TurnResult>(`/interviews/${session.id}/turns`, { method: "POST", body: JSON.stringify({ answer: skip ? "" : text, skip: skip || !text, position: question.position }) });
-      setAnswer(""); await onTurn(result);
+      clearDraft(); await onTurn(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Your answer could not be saved."); }
     finally { setPending(false); }
-  }, [onTurn, question, session.id]);
+  }, [clearDraft, onTurn, question, session.id]);
 
-  const seconds = QUESTION_SECONDS[session.mode];
-  const left = useCountdown(question?.position ?? null, seconds, () => void submit(false));
+  const seconds = question?.seconds_left ?? null;
+  const left = useCountdown(position, seconds, () => void submit(false));
   if (!question) return <section className="stage"><Loader2 className="spin" /> Wrapping up…</section>;
   function handleSubmit(event: FormEvent) { event.preventDefault(); void submit(false); }
   return <section className="stage text-stage">
-    {last && session.mode === "practice" && last.feedback && <LastFeedback last={last} />}
+    {last && <LastFeedback last={last} />}
     <div className="interviewer-line">
       <InterviewerOrb phase={pending ? "thinking" : "speaking"} level={0} size="small" />
       <div><span className="eyebrow">ALEX · {question.category_label.toUpperCase()}{question.is_follow_up ? " · FOLLOW-UP" : ""}</span>{question.intro && <p className="interviewer-intro">{question.intro}</p>}<h2>{question.question}</h2></div>
-      {seconds > 0 && <span className={`countdown ${left <= 30 ? "urgent" : ""}`}><Timer size={14} />{clock(left)}</span>}
+      {seconds != null && <span className={`countdown ${left <= 30 ? "urgent" : ""}`}><Timer size={14} />{clock(left)}</span>}
     </div>
     {session.voice_enabled && <VoiceControls key={question.position} interviewId={session.id} position={question.position} disabled={pending} onTranscript={(text) => setAnswer((current) => (current.trim() ? `${current.trim()} ${text}` : text).slice(0, 20000))} />}
     <form onSubmit={handleSubmit} className="answer-form">
       <label className="field-label" htmlFor="answer"><span><Keyboard size={12} /> Your answer</span></label>
       <textarea id="answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Think out loud: approach, trade-offs, and an example from your experience…" maxLength={20000} rows={7} disabled={pending} />
-      <div className="answer-tools"><span>{answer.length.toLocaleString()} / 20,000</span><div>{error && <span className="inline-error">{error}</span>}<button type="button" className="button quiet" onClick={() => void submit(true)} disabled={pending}>Skip</button><button className="button primary" disabled={pending || !answer.trim()}>{pending ? <><Loader2 size={14} className="spin" />Alex is reviewing…</> : <>Submit answer<ArrowRight size={15} /></>}</button></div></div>
+      <div className="answer-tools"><span>{answer.length.toLocaleString()} / 20,000{draftLabel(draft.state) && <> · <span className={draft.state === "error" ? "inline-error" : ""}>{draftLabel(draft.state)}</span></>}</span><div>{error && <span className="inline-error">{error}</span>}<button type="button" className="button quiet" onClick={() => void submit(true)} disabled={pending}>Skip</button><button className="button primary" disabled={pending || !answer.trim()}>{pending ? <><Loader2 size={14} className="spin" />Alex is reviewing…</> : <>Submit answer<ArrowRight size={15} /></>}</button></div></div>
     </form>
   </section>;
 }
 
-function LastFeedback({ last }: { last: { question: string; feedback: Feedback | null; reaction: string } }) {
-  const feedback = last.feedback!;
+function LastFeedback({ last }: { last: LastFeedbackData }) {
+  const feedback = last.feedback;
   return <details className="last-feedback" open>
     <summary><span className={`score-chip tone-${(feedback.score ?? 0) >= 8 ? "strong" : (feedback.score ?? 0) >= 6 ? "good" : "fair"}`}>{feedback.score ?? "—"}<small>/10</small></span><span><strong>Feedback on your last answer</strong><small>{last.question}</small></span></summary>
     <div className="last-feedback-body">

@@ -46,6 +46,15 @@ Face tracking uses MediaPipe in the browser; video never leaves the device, and 
 
 Paid AI calls are limited per user and per hour (`AI_RATE_LIMITS` in `backend/config.py`; the demo account shares one budget). The provider's own limits apply too: a free Groq key allows 8,000 tokens per minute and 1,000 requests per day for the whole deployment, which is roughly five answer evaluations per minute. Use a paid Groq tier before opening the app to many concurrent users.
 
+### Server-owned interview state
+
+The API, not the browser, is the source of truth for everything a candidate would expect to survive a refresh or a device switch:
+
+- **Setup choices** (role, level, focus areas, session type, format, camera, voice auto-play) are saved to the account with `PUT /api/v1/preferences` as they change, and again when an interview starts. `GET /api/v1/interview-options` returns them along with the rules the setup screen shows: question counts, session length, assessment answer time, and whether voice is configured.
+- **Drafts**: unsubmitted answers and code autosave to `PUT /api/v1/interviews/<id>/draft` and come back with the interview. A draft is deleted when its answer is submitted.
+- **Assessment clock**: `POST /api/v1/interviews/<id>/join` starts the answer clock once, and each question reports the server's `seconds_left`, so reloading or rejoining never adds time. Late answers are recorded for every question, including the first.
+- **Voice**: a voice-only interview is only created when the server has voice configured, whatever the browser asks for.
+
 ### AI call telemetry
 
 Every Groq and ElevenLabs call is recorded in the `ai_calls` table: its kind (`plan`, `evaluate`, `report`, `answer_review`, `code_review`, `tts`, `stt`), latency, token counts and outcome (`ok`, `error`, `fallback` when the candidate got the built-in response, or `cached` for replayed speech). Rows are saved after the response is built, so telemetry never slows or breaks an interview. Only call metadata is stored, never prompts, answers or audio.

@@ -207,7 +207,7 @@ def test_late_assessment_answers_are_recorded(signed_in, planned, app):
     signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "On time"}, headers=headers)
     with app.app_context():
         question = InterviewQuestion.query.filter_by(interview_id=interview_id, position=1).one()
-        question.created_at -= timedelta(seconds=routes.ASSESSMENT_ANSWER_SECONDS + routes.ASSESSMENT_GRACE_SECONDS + 30)
+        question.asked_at -= timedelta(seconds=routes.ASSESSMENT_ANSWER_SECONDS + routes.ASSESSMENT_GRACE_SECONDS + 30)
         db.session.commit()
     signed_in.post(f"/api/v1/interviews/{interview_id}/turns", json={"answer": "Late"}, headers=headers)
     integrity = signed_in.get(f"/api/v1/interviews/{interview_id}").json["interview"]["integrity"]
