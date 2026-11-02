@@ -136,7 +136,16 @@ The backend tests use an isolated SQLite database and mock every external AI and
 
 ## Deploying
 
-`render.yaml` is a Render blueprint that creates a Next.js web service, a private Flask service and a managed PostgreSQL database in the same region. Database migrations run before each deploy. Add `GROQ_API_KEY`, `ELEVAN_LAB_API_KEY` and `ADMIN_EMAILS` as secrets in Render.
+`render.yaml` is a Render blueprint that creates a Next.js web service, a private Flask service and a managed PostgreSQL database in the same region. Database migrations run before each deploy. When creating the Blueprint, Render asks for these values:
+
+| Key | Value |
+|---|---|
+| `WEB_ORIGINS` | The web service's public URL, e.g. `https://skillmentor-web.onrender.com`. Sign-in fails with "origin not allowed" until this matches the real URL exactly. |
+| `GROQ_API_KEY` | Your Groq key (AI questions and feedback) |
+| `ELEVAN_LAB_API_KEY` | Your ElevenLabs key (voice) |
+| `ADMIN_EMAILS` | Accounts allowed to read the AI metrics |
+
+`SECRET_KEY`, `DATABASE_URL` and the API address are generated and wired by Render.
 
 In production the app refuses to start with a missing or short `SECRET_KEY`, or with a SQLite database.
 

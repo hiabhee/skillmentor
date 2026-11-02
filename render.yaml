@@ -1,9 +1,10 @@
+# Render Blueprint: a public Next.js site, a private Flask API and PostgreSQL. See README "Deploying".
 services:
   - type: web
     name: skillmentor-web
     runtime: node
     region: oregon
-    plan: starter
+    plan: 0.5c-512mb
     buildCommand: cd frontend && npm ci && npm run build
     startCommand: cd frontend && npm run start
     healthCheckPath: /
@@ -21,7 +22,7 @@ services:
     name: skillmentor-api
     runtime: python
     region: oregon
-    plan: starter
+    plan: 0.5c-512mb
     buildCommand: pip install -r backend/requirements.txt
     preDeployCommand: flask --app backend.app db upgrade
     startCommand: gunicorn --chdir . backend.app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 --access-logfile - --error-logfile -
@@ -36,11 +37,10 @@ services:
         fromDatabase:
           name: skillmentor-db
           property: connectionString
+      # The public address of skillmentor-web, e.g. https://skillmentor-web.onrender.com (comma-separate several).
+      # The API rejects sign-ins and other changes from any other origin, so set it to the web service's real URL.
       - key: WEB_ORIGINS
-        fromService:
-          type: web
-          name: skillmentor-web
-          envVarKey: RENDER_EXTERNAL_URL
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
