@@ -211,6 +211,12 @@ def _clear_auth_cookies(response):
 
 @api.before_request
 def enforce_browser_boundary():
+    # Only the web app's proxy may call the API. Health checks stay open for the hosting platform.
+    expected = current_app.config.get("API_PROXY_SECRET", "")
+    if expected and request.endpoint not in {"api.live", "api.ready"}:
+        supplied = request.headers.get("X-Proxy-Secret", "")
+        if not supplied.isascii() or not secrets.compare_digest(supplied, expected):
+            return _error("forbidden", "Requests must come through the Skillmentor web app.", 403)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         origin = request.headers.get("Origin", "").rstrip("/")
         allowed = current_app.config["WEB_ORIGINS"]

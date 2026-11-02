@@ -49,6 +49,9 @@ class Config:
         ).split(",")
         if origin.strip()
     )
+    # Shared secret the web app's /api/v1 proxy sends in X-Proxy-Secret. When set, the API only answers
+    # requests that carry it, so a publicly reachable API (e.g. frontend on Vercel) can't be called directly.
+    API_PROXY_SECRET = os.getenv("API_PROXY_SECRET", "").strip()
     # Accounts that may read /api/v1/admin/metrics (comma-separated emails).
     ADMIN_EMAILS = frozenset(
         email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()
@@ -62,6 +65,8 @@ class Config:
             secret = cls.SECRET_KEY
             if len(secret) < 32:
                 raise RuntimeError("SECRET_KEY must be configured with at least 32 characters in production")
+            if len(cls.API_PROXY_SECRET) < 32:
+                raise RuntimeError("API_PROXY_SECRET must be configured with at least 32 characters in production")
             if cls.SQLALCHEMY_DATABASE_URI.startswith("sqlite:"):
                 raise RuntimeError("DATABASE_URL must point to PostgreSQL in production")
             parsed = urlsplit(cls.SQLALCHEMY_DATABASE_URI)

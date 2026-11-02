@@ -7,6 +7,14 @@ def production_config(monkeypatch, url):
     monkeypatch.setattr(Config, "ENVIRONMENT", "production")
     monkeypatch.setattr(Config, "SECRET_KEY", "a-production-secret-that-is-at-least-32-chars")
     monkeypatch.setattr(Config, "SQLALCHEMY_DATABASE_URI", url)
+    monkeypatch.setattr(Config, "API_PROXY_SECRET", "a-proxy-secret-that-is-at-least-32-characters")
+
+
+def test_production_requires_a_proxy_secret(monkeypatch):
+    production_config(monkeypatch, "postgresql+psycopg://app:secret@db.internal/skillmentor")
+    monkeypatch.setattr(Config, "API_PROXY_SECRET", "")
+    with pytest.raises(RuntimeError, match="API_PROXY_SECRET"):
+        Config.validate()
 
 
 def test_production_rejects_missing_or_short_session_secrets(monkeypatch):

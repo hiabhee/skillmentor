@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+// AI planning and transcription can take several seconds; allow more than serverless defaults.
+export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -17,8 +19,12 @@ async function proxy(request: NextRequest, context: RouteContext) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // Proves to the API that the request came through this web app (required when the API is public).
+  const proxySecret = process.env.API_PROXY_SECRET;
+  if (proxySecret) headers.set("x-proxy-secret", proxySecret);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  // Long enough for a free-tier API to wake from sleep (often 30-50 s), within maxDuration.
+  const timeout = setTimeout(() => controller.abort(), 55_000);
   try {
     const upstream = await fetch(target, {
       method: request.method,

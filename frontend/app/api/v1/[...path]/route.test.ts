@@ -8,6 +8,14 @@ afterEach(() => {
 });
 
 describe("same-origin backend proxy", () => {
+  it("proves its identity to the API with the shared proxy secret", async () => {
+    vi.stubEnv("BACKEND_URL", "https://api.example.com");
+    vi.stubEnv("API_PROXY_SECRET", "shared-secret");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    await GET(new NextRequest("http://localhost/api/v1/auth/me"), { params: Promise.resolve({ path: ["auth", "me"] }) });
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("x-proxy-secret")).toBe("shared-secret");
+  });
+
   it("forwards the session boundary and preserves API cookies", async () => {
     vi.stubEnv("BACKEND_URL", "private-api.internal:10000");
     const upstreamHeaders = new Headers({ "content-type": "application/json" });
