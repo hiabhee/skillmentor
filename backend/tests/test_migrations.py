@@ -54,8 +54,8 @@ def test_legacy_upgrade_preserves_users_and_orders_responses(tmp_path):
     assert connection.execute("SELECT email FROM users WHERE id=7").fetchone() == ("legacy@example.com",)
     assert connection.execute("SELECT status FROM interviews WHERE id=12").fetchone() == ("in_progress",)
     assert connection.execute("SELECT id, question_position FROM responses WHERE interview_id=12 ORDER BY id").fetchall() == [(31, 0), (32, 1)]
-    assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("20261015_0003",)
+    assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("20261102_0004",)
     assert connection.execute("SELECT voice_only, proctored FROM interviews WHERE id=12").fetchone() == (0, 0)
     tables = {name for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"interview_questions", "proctor_events", "rate_limit_buckets"} <= tables
+    assert {"interview_questions", "proctor_events", "rate_limit_buckets", "ai_calls"} <= tables
     connection.close()

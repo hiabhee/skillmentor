@@ -97,6 +97,23 @@ class RateLimitBucket(db.Model):
     window_started_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
 
+class AICall(db.Model):
+    """One AI or voice provider call: what it was, how long it took, tokens used and how it ended."""
+
+    __tablename__ = "ai_calls"
+
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(40), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)
+    # ok, error (provider failed), fallback (candidate got the built-in response) or cached (no provider call).
+    status = db.Column(db.String(10), nullable=False)
+    latency_ms = db.Column(db.Integer)
+    prompt_tokens = db.Column(db.Integer)
+    completion_tokens = db.Column(db.Integer)
+    error = db.Column(db.String(80))
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+
+
 class CodingChallenge(db.Model):
     __tablename__ = "coding_challenges"
     __table_args__ = (

@@ -5,6 +5,8 @@ import os
 import re
 import time
 
+from . import telemetry
+
 try:
     from groq import Groq
 except Exception:  # The app remains usable when the optional provider is missing.
@@ -48,9 +50,10 @@ if AI_ENABLED:
         AI_ENABLED = False
 
 
-def _call_model(prompt, temperature=0.2):
+def _call_model(prompt, temperature=0.2, kind="other"):
     if not AI_ENABLED:
         raise RuntimeError("AI feedback is not configured")
+    started = time.perf_counter()
     for attempt in range(2):
         try:
             response = _create_completion(prompt, temperature)
@@ -59,13 +62,23 @@ def _call_model(prompt, temperature=0.2):
             if attempt == 0 and type(error).__name__ == "RateLimitError":
                 time.sleep(RATE_LIMIT_RETRY_SECONDS)
                 continue
+            telemetry.record(kind, "groq", "error", (time.perf_counter() - started) * 1000, error=type(error).__name__)
             raise
+    usage = getattr(response, "usage", None)
+    telemetry.record(kind, "groq", "ok", (time.perf_counter() - started) * 1000,
+                     prompt_tokens=_token_count(usage, "prompt_tokens"),
+                     completion_tokens=_token_count(usage, "completion_tokens"))
     choices = getattr(response, "choices", None)
     message = getattr(choices[0], "message", None) if choices else None
     content = getattr(message, "content", None)
     if not isinstance(content, str) or not content.strip():
         raise ValueError("The AI provider returned an empty response")
     return content
+
+
+def _token_count(usage, field):
+    value = getattr(usage, field, None)
+    return value if isinstance(value, int) and value >= 0 else None
 
 
 def _create_completion(prompt, temperature):
@@ -111,7 +124,7 @@ Return JSON: {"strengths":["..."],"improvements":["..."],"score":0.0}
 Score 1-10 using relevance (0-3), specific evidence and ownership (0-3), clarity and structure (0-2), and reflection or impact (0-2). Do not reward length by itself. If an answer is empty or unrelated, score 1-3. Give 1-2 concrete strengths and 1-3 changes the candidate can make in their next answer. Never invent facts.
 
 Question: """ + json.dumps(question, ensure_ascii=False) + "\nCandidate answer: " + json.dumps(answer, ensure_ascii=False)
-    data = _parse_json(_call_model(prompt, temperature=0.15))
+    data = _parse_json(_call_model(prompt, temperature=0.15, kind="answer_review"))
     score = float(data.get("score"))
     if not 1 <= score <= 10:
         raise ValueError("The AI returned an out-of-range score")
@@ -142,7 +155,7 @@ Return only JSON: {"is_correct":false,"score":0,"summary":"...","strengths":["..
 Use score 0-10. A solution with a correctness flaw must score at most 5. A correct, efficient solution should score 8-10. Give test-specific reasoning in the summary. If code is incomplete, say what is missing. Set show_solution true only when the solution is not correct.
 
 Review data: """ + json.dumps(evaluation_context, ensure_ascii=False)
-    data = _parse_json(_call_model(prompt, temperature=0.1))
+    data = _parse_json(_call_model(prompt, temperature=0.1, kind="code_review"))
     score = max(0.0, min(10.0, float(data.get("score"))))
     strengths = data.get("strengths", [])
     improvements = data.get("improvements", [])

@@ -46,6 +46,16 @@ Face tracking uses MediaPipe in the browser; video never leaves the device, and 
 
 Paid AI calls are limited per user and per hour (`AI_RATE_LIMITS` in `backend/config.py`; the demo account shares one budget). The provider's own limits apply too: a free Groq key allows 8,000 tokens per minute and 1,000 requests per day for the whole deployment, which is roughly five answer evaluations per minute. Use a paid Groq tier before opening the app to many concurrent users.
 
+### AI call telemetry
+
+Every Groq and ElevenLabs call is recorded in the `ai_calls` table: its kind (`plan`, `evaluate`, `report`, `answer_review`, `code_review`, `tts`, `stt`), latency, token counts and outcome (`ok`, `error`, `fallback` when the candidate got the built-in response, or `cached` for replayed speech). Rows are saved after the response is built, so telemetry never slows or breaks an interview. Only call metadata is stored, never prompts, answers or audio.
+
+Accounts listed in `ADMIN_EMAILS` (comma-separated) can read `GET /api/v1/admin/metrics?days=7`, which returns per-kind call counts, success, fallback and cache-hit rates, p50/p95 latency and average tokens. Other accounts get a 404. The same summary is available from the command line:
+
+```sh
+flask --app backend.app ai-metrics --days 30
+```
+
 ## Production configuration
 
 `render.yaml` provisions a Next.js web service, a private Flask service, and PostgreSQL in the same region. The backend migration runs before each deployment. Add `GROQ_API_KEY` as a secret in Render if AI reviews should be enabled. Production startup rejects a missing/short session secret and SQLite database configuration.

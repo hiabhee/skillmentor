@@ -8,9 +8,12 @@ import json
 import os
 import secrets
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections import OrderedDict
+
+from . import telemetry
 
 API_BASE = os.getenv("ELEVENLABS_API_BASE", "https://api.elevenlabs.io").rstrip("/")
 # The project's .env uses ELEVAN_LAB_API_KEY; the conventional name is accepted too.
@@ -53,12 +56,24 @@ def _send(request):
         raise VoiceError("ElevenLabs could not be reached") from error
 
 
+def _timed(kind, request):
+    started = time.perf_counter()
+    try:
+        result = _send(request)
+    except VoiceError as error:
+        telemetry.record(kind, "elevenlabs", "error", (time.perf_counter() - started) * 1000, error=str(error))
+        raise
+    telemetry.record(kind, "elevenlabs", "ok", (time.perf_counter() - started) * 1000)
+    return result
+
+
 def synthesize(text):
     """Return MP3 bytes for text. Recent results are cached because candidates replay questions."""
     key = (VOICE_ID, TTS_MODEL, text)
     with _cache_lock:
         if key in _speech_cache:
             _speech_cache.move_to_end(key)
+            telemetry.record("tts", "elevenlabs", "cached", 0)
             return _speech_cache[key]
     body = json.dumps({"text": text, "model_id": TTS_MODEL}).encode("utf-8")
     request = urllib.request.Request(
@@ -66,7 +81,7 @@ def synthesize(text):
         data=body, method="POST",
         headers={"Content-Type": "application/json", "Accept": "audio/mpeg"},
     )
-    audio = _send(request)
+    audio = _timed("tts", request)
     if not audio:
         raise VoiceError("ElevenLabs returned empty audio")
     with _cache_lock:
@@ -93,7 +108,7 @@ def transcribe(audio, filename, content_type):
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Accept": "application/json"},
     )
     try:
-        data = json.loads(_send(request))
+        data = json.loads(_timed("stt", request))
     except (ValueError, TypeError) as error:
         raise VoiceError("ElevenLabs returned an unreadable transcript") from error
     text = data.get("text") if isinstance(data, dict) else None

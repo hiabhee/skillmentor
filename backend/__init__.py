@@ -1,5 +1,8 @@
 """Flask API application factory. No HTML templates or static frontend are served here."""
 
+import json
+
+import click
 from flask import Flask, jsonify
 from flask_migrate import Migrate
 from werkzeug.exceptions import HTTPException
@@ -22,7 +25,16 @@ def create_app(config_object=Config):
     from . import models  # noqa: F401 - register SQLAlchemy models before migrations.
     from .routes import api
 
+    from . import telemetry
+
     app.register_blueprint(api, url_prefix="/api/v1")
+    app.after_request(telemetry.flush)
+
+    @app.cli.command("ai-metrics")
+    @click.option("--days", default=7, show_default=True, type=click.IntRange(1, 365))
+    def ai_metrics(days):
+        """Print AI and voice call metrics for the last N days."""
+        click.echo(json.dumps(telemetry.summarize(days), indent=2))
 
     @app.errorhandler(404)
     def not_found(_error):

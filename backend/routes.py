@@ -18,7 +18,7 @@ from .ai_service import (
     review_code_submission,
     review_interview_answer,
 )
-from . import tech_interview, voice_service
+from . import ai_service, telemetry, tech_interview, voice_service
 from .extensions import db
 from .models import (AuthSession, CodingChallenge, Interview, InterviewQuestion, LoginAttempt, ProctorEvent,
                      RateLimitBucket, Response, User, utcnow)
@@ -415,6 +415,27 @@ def logout():
     return _clear_auth_cookies(response)
 
 
+def _record_fallback(kind):
+    # Without a provider every review falls back by design; count only real provider failures.
+    if ai_service.AI_ENABLED:
+        telemetry.record(kind, "groq", "fallback")
+
+
+@api.get("/admin/metrics")
+@require_user
+def admin_metrics():
+    """AI and voice call metrics for operators listed in ADMIN_EMAILS; hidden from everyone else."""
+    if g.current_user.email.lower() not in current_app.config["ADMIN_EMAILS"]:
+        return _error("not_found", "Resource not found.", 404)
+    try:
+        days = int(request.args.get("days", 7))
+    except ValueError:
+        return _error("invalid_days", "days must be a whole number from 1 to 90.", 400)
+    if not 1 <= days <= 90:
+        return _error("invalid_days", "days must be a whole number from 1 to 90.", 400)
+    return jsonify(telemetry.summarize(days))
+
+
 @api.get("/capabilities")
 @require_user
 def capabilities():
@@ -626,6 +647,7 @@ def submit_interview_answer(interview_id):
         feedback = review_interview_answer(question, stored_answer)
     except Exception:
         current_app.logger.warning("AI answer review failed; using the fallback", exc_info=True)
+        _record_fallback("answer_review")
         feedback = fallback_interview_feedback(stored_answer)
     feedback_text = json.dumps(feedback, ensure_ascii=False)
     response = Response(user_id=g.current_user.id, interview_id=interview.id, question=question,
@@ -854,6 +876,7 @@ def submit_code(interview_id):
         evaluation = review_code_submission(problem, code)
     except Exception:
         current_app.logger.warning("AI code review failed; saving without a review", exc_info=True)
+        _record_fallback("code_review")
         evaluation = {"is_correct": None, "score": None,
                       "summary": "Your code was saved, but automated review is unavailable. Your submission remains in history.",
                       "strengths": [], "improvements": [], "show_solution": False, "automated": False}

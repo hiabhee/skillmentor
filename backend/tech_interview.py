@@ -8,7 +8,7 @@ import json
 import logging
 import re
 
-from . import ai_service
+from . import ai_service, telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +121,11 @@ _REACTIONS = {
 }
 
 
-def _log_fallback(action):
+def _log_fallback(action, kind):
     # Without a configured provider every call falls back by design, so only log real failures.
     if ai_service.AI_ENABLED:
         logger.warning("AI %s failed; using the fallback", action, exc_info=True)
+        telemetry.record(kind, "groq", "fallback")
 
 
 def role_title(role_key, custom_role=None):
@@ -161,7 +162,7 @@ Return JSON: {"questions":[{"question":"...","category":"one of the categories"}
 
 Interview context: """ + json.dumps(context, ensure_ascii=False)
     try:
-        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.6))
+        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.6, kind="plan"))
         items = data.get("questions")
         plan = []
         for item in items if isinstance(items, list) else []:
@@ -172,7 +173,7 @@ Interview context: """ + json.dumps(context, ensure_ascii=False)
         if len(plan) >= count:
             return plan[:count], True
     except Exception:
-        _log_fallback("interview planning")
+        _log_fallback("interview planning", "plan")
     return fallback_plan(role_key, mode), False
 
 
@@ -191,7 +192,7 @@ Return JSON: {"score":0.0,"strengths":["..."],"improvements":["..."],"model_answ
 
 Turn: """ + json.dumps(context, ensure_ascii=False)
     try:
-        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.3))
+        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.3, kind="evaluate"))
         score = float(data.get("score"))
         if not 1 <= score <= 10:
             raise ValueError("score out of range")
@@ -207,7 +208,7 @@ Turn: """ + json.dumps(context, ensure_ascii=False)
                 "model_answer": model_answer, "reaction": reaction,
                 "follow_up": follow_up if follow_up and len(follow_up) >= 10 else None, "automated": True}
     except Exception:
-        _log_fallback("answer evaluation")
+        _log_fallback("answer evaluation", "evaluate")
         feedback = ai_service.fallback_interview_feedback("" if skipped else answer)
         return {**feedback, "model_answer": [], "reaction": _REACTIONS[mode][position % 4], "follow_up": None}
 
@@ -255,7 +256,7 @@ Return JSON: {"summary":"...","strengths":["..."],"improvements":["..."],"next_s
 
 Interview: """ + json.dumps(context, ensure_ascii=False)
     try:
-        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.2))
+        data = ai_service._parse_json(ai_service._call_model(prompt, temperature=0.2, kind="report"))
         summary = ai_service._text(data.get("summary"), "summary")
         strengths = [ai_service._text(item, "strength") for item in data.get("strengths", [])[:3]]
         improvements = [ai_service._text(item, "improvement") for item in data.get("improvements", [])[:3]]
@@ -265,5 +266,5 @@ Interview: """ + json.dumps(context, ensure_ascii=False)
         return {**base, "summary": summary, "strengths": strengths, "improvements": improvements,
                 "next_steps": next_steps, "automated": True}
     except Exception:
-        _log_fallback("report summary")
+        _log_fallback("report summary", "report")
         return base

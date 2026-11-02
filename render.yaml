@@ -47,6 +47,8 @@ services:
         value: openai/gpt-oss-120b
       - key: ELEVAN_LAB_API_KEY
         sync: false
+      - key: ADMIN_EMAILS
+        sync: false
 databases:
   - name: skillmentor-db
     databaseName: skillmentor

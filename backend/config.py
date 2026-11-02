@@ -49,6 +49,10 @@ class Config:
         ).split(",")
         if origin.strip()
     )
+    # Accounts that may read /api/v1/admin/metrics (comma-separated emails).
+    ADMIN_EMAILS = frozenset(
+        email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()
+    )
     MIGRATIONS_DIR = str(ROOT_DIR / "backend" / "migrations")
     JSON_SORT_KEYS = False
 

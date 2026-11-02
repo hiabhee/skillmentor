@@ -141,7 +141,7 @@ def test_ai_fallbacks_keep_the_interview_running(monkeypatch):
 
 
 def test_model_output_is_validated(monkeypatch):
-    monkeypatch.setattr(tech_interview.ai_service, "_call_model", lambda prompt, temperature=0.2: json.dumps({
+    monkeypatch.setattr(tech_interview.ai_service, "_call_model", lambda prompt, temperature=0.2, kind="other": json.dumps({
         "score": 8, "strengths": ["Precise"], "improvements": ["Mention limits"], "model_answer": ["A", 3],
         "reaction": "Nice.", "follow_up": "What about failure modes there?"}))
     turn = tech_interview.evaluate_turn(role="Backend Engineer", level="mid", mode="practice", question="Q?", category="fundamentals",
