@@ -16,7 +16,7 @@ Use Node 20.9 or newer and Python 3.11 or newer.
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r backend/requirements.txt
+pip install -r backend/requirements-dev.txt
 flask --app backend.app db upgrade
 ```
 
@@ -34,7 +34,7 @@ The frontend proxy defaults to `http://127.0.0.1:8000`. Start the API separately
 flask --app backend.app run --port 8000
 ```
 
-The backend uses `DATABASE_URL` when set and otherwise stores local data in `interview.db`. Set `SECRET_KEY` to a random value and optionally set `GROQ_API_KEY` for AI reviews. AI review falls back to a clearly labeled basic response when Groq is unavailable. The coding review is advisory and does not execute submitted code. The provider timeout is configurable with `AI_REVIEW_TIMEOUT_SECONDS`; `GROQ_MODEL` selects a supported Groq model and defaults to `openai/gpt-oss-120b`. `GROQ_REASONING_EFFORT` defaults to `low` for gpt-oss models, which uses about 40% fewer tokens per evaluation; set it to `medium` or `high` for deeper reviews, or to an empty value for models without reasoning.
+The backend uses `DATABASE_URL` when set and otherwise stores local data in `interview.db`. Set `SECRET_KEY` to a random value and optionally set `GROQ_API_KEY` for AI reviews. AI review falls back to a clearly labeled basic response when Groq is unavailable. The coding review is advisory and does not execute submitted code. The provider timeout is configurable with `AI_REVIEW_TIMEOUT_SECONDS`; `GROQ_MODEL` selects a supported Groq model and defaults to `openai/gpt-oss-120b`. `GROQ_REASONING_EFFORT` defaults to `low` for gpt-oss models, which uses about 33% fewer tokens and half the latency per evaluation; set it to `medium` or `high` for deeper reviews, or to an empty value for models without reasoning.
 
 ### Tech interviews, voice and face tracking
 

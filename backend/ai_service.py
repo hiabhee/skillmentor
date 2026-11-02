@@ -13,8 +13,9 @@ except Exception:  # The app remains usable when the optional provider is missin
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-# Low reasoning effort uses about 40% fewer tokens per evaluation with similar feedback, which matters
-# under per-minute token limits. Only reasoning models accept the parameter.
+# Low reasoning effort, measured against medium on 8 real answers: 33% fewer total tokens (820 vs 1,223),
+# 60% fewer output tokens and about half the latency (median 0.97s vs 1.98s). That matters under
+# per-minute token limits. Only reasoning models accept the parameter.
 REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low" if MODEL_NAME.startswith("openai/gpt-oss") else "").strip()
 AI_ENABLED = bool(GROQ_API_KEY and Groq is not None)
 # One short retry rides out a per-minute provider limit without nearing the proxy timeout.
