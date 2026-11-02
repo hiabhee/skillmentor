@@ -23,6 +23,9 @@ export function TechSession({ session, refresh }: { session: Session; refresh: (
   return <LiveRoom session={session} devices={devices} refresh={refresh} />;
 }
 
+const openCamera = () => navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } });
+const cameraLive = (stream: MediaStream | null) => stream?.getVideoTracks()[0]?.readyState === "live";
+
 function SessionTags({ session }: { session: Session }) {
   return <div className="tech-tags"><span className={`mode-pill ${session.mode}`}>{session.mode === "assessment" ? "Assessment" : "Practice"}</span><span>{session.level_label}</span><span>{session.voice_only ? "Voice call" : "Voice + text"}</span>{session.proctored && <span><ScanFace size={12} />Camera on</span>}</div>;
 }
@@ -37,6 +40,7 @@ function Lobby({ session, refresh, onJoin }: { session: Session; refresh: () => 
   const [joining, setJoining] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const handedOff = useRef(false);
+  const held = useRef<Devices>({ camera: null, mic: null });
 
   useEffect(() => { if (videoRef.current && camera) videoRef.current.srcObject = camera; }, [camera]);
   useEffect(() => {
@@ -47,19 +51,24 @@ function Lobby({ session, refresh, onJoin }: { session: Session; refresh: () => 
     const timer = setInterval(() => { analyser.getFloatTimeDomainData(buffer); let sum = 0; for (const v of buffer) sum += v * v; setLevel(Math.min(1, Math.sqrt(sum / buffer.length) * 10)); }, 80);
     return () => { clearInterval(timer); void context.close(); };
   }, [mic]);
-  useEffect(() => () => { if (!handedOff.current) { camera?.getTracks().forEach((t) => t.stop()); mic?.getTracks().forEach((t) => t.stop()); } }, [camera, mic]);
+  // Release devices only when the lobby closes without joining. Tying this to [camera, mic] stopped the
+  // camera the moment the microphone turned on, so the live room got a black, untrackable feed.
+  useEffect(() => {
+    const streams = held.current;
+    return () => { if (!handedOff.current) { streams.camera?.getTracks().forEach((t) => t.stop()); streams.mic?.getTracks().forEach((t) => t.stop()); } };
+  }, []);
 
   async function enable() {
     setError("");
     try {
-      if (session.proctored && !camera) setCamera(await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } }));
-      if (wantsMic && !mic) setMic(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }));
+      if (session.proctored && !cameraLive(camera)) { const stream = await openCamera(); held.current.camera = stream; setCamera(stream); }
+      if (wantsMic && !mic) { const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); held.current.mic = stream; setMic(stream); }
     } catch (cause) {
       setError(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Permission was blocked. Allow camera and microphone in your browser's address bar, then try again." : "We couldn't start your devices. Check that no other app is using them.");
     }
   }
 
-  const ready = (!session.proctored || camera) && (!needsMic || mic);
+  const ready = (!session.proctored || cameraLive(camera)) && (!needsMic || mic);
 
   async function join() {
     setJoining(true); setError("");
@@ -130,15 +139,55 @@ const PHASE_LABEL: Record<CallPhase, string> = { connecting: "Connecting…", sp
 
 function LiveRoom({ session, devices, refresh }: { session: Session; devices: Devices; refresh: () => Promise<unknown> }) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const [camera, setCamera] = useState<MediaStream | null>(devices.camera);
+  // When the camera stopped (unplugged, permission revoked, another app took it); null while it is live.
+  const [cameraLostAt, setCameraLostAt] = useState<number | null>(() => devices.camera && !cameraLive(devices.camera) ? Date.now() : null);
+  const [cameraError, setCameraError] = useState("");
+  const restarted = useRef<MediaStream | null>(null);
+  const lostAtRef = useRef(cameraLostAt);
+  useEffect(() => { lostAtRef.current = cameraLostAt; }, [cameraLostAt]);
   const question = session.current_question;
+  const positionRef = useRef(question?.position ?? null);
+  useEffect(() => { positionRef.current = question?.position ?? null; }, [question?.position]);
   const last = lastFeedback(session);
-  const proctor = useProctor({ enabled: session.proctored && !!devices.camera, video, interviewId: session.id, position: question?.position ?? null });
-  useEffect(() => { if (video && devices.camera) video.srcObject = devices.camera; }, [video, devices.camera]);
+  // A stopped camera is a device problem, not "no face": pause face tracking instead of logging false warnings.
+  const proctor = useProctor({ enabled: session.proctored && !!camera && cameraLostAt === null, video, interviewId: session.id, position: question?.position ?? null });
+  useEffect(() => { if (video && camera) video.srcObject = camera; }, [video, camera]);
+  useEffect(() => {
+    const track = camera?.getVideoTracks()[0];
+    if (!track) return;
+    const onEnded = () => setCameraLostAt((current) => current ?? Date.now());
+    track.addEventListener("ended", onEnded);
+    return () => track.removeEventListener("ended", onEnded);
+  }, [camera]);
+
+  const reportCameraOff = useCallback((lostAt: number) => {
+    const events = [{ kind: "camera_off", duration_ms: Math.min(Date.now() - lostAt, 3_600_000), position: positionRef.current }];
+    void api(`/interviews/${session.id}/proctor-events`, { method: "POST", body: JSON.stringify({ events }), keepalive: true }).catch(() => undefined);
+  }, [session.id]);
+  useEffect(() => () => {
+    restarted.current?.getTracks().forEach((track) => track.stop());
+    if (lostAtRef.current !== null) reportCameraOff(lostAtRef.current);
+  }, [reportCameraOff]);
+
+  async function restartCamera() {
+    setCameraError("");
+    try {
+      const stream = await openCamera();
+      restarted.current?.getTracks().forEach((track) => track.stop());
+      restarted.current = stream;
+      if (cameraLostAt !== null) reportCameraOff(cameraLostAt);
+      setCamera(stream); setCameraLostAt(null);
+    } catch (cause) {
+      setCameraError(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Camera permission is blocked. Allow it in the address bar." : "The camera is busy or unavailable.");
+    }
+  }
 
   const onTurn = useCallback(async () => { await refresh(); }, [refresh]);
 
   const progress = session.total_main ? ((question ? question.number - 1 : session.total_main) / session.total_main) * 100 : 0;
-  const warning = proctor.warning ? ISSUE_COPY[proctor.warning] : null;
+  const warning = cameraLostAt !== null ? { title: "Your camera stopped", detail: "Turn it back on to continue face tracking. The time it was off is noted in your integrity report." }
+    : proctor.warning ? ISSUE_COPY[proctor.warning] : null;
   return <div className={`live-room ${warning ? "has-warning" : ""}`}>
     <header className="live-top">
       <div className="live-title"><span className="live-dot" />LIVE<strong>{session.role}</strong><SessionTags session={session} /></div>
@@ -151,7 +200,9 @@ function LiveRoom({ session, devices, refresh }: { session: Session; devices: De
         ? <VoiceStage session={session} mic={devices.mic} onTurn={onTurn} />
         : <TextStage key={question?.position ?? -1} session={session} onTurn={onTurn} last={last} />}
       <aside className="live-side">
-        {session.proctored && <div className={`self-view ${proctor.warning ? "warn" : ""}`}><video ref={setVideo} autoPlay playsInline muted /><span className={`face-pill ${proctor.status}`}>{proctor.status === "watching" ? (proctor.warning ? <><CircleAlert size={12} />Check position</> : <><ScanFace size={12} />Face tracked</>) : proctor.status === "error" ? "Tracking unavailable" : <><Loader2 size={12} className="spin" />Starting tracking</>}</span></div>}
+        {session.proctored && <div className={`self-view ${proctor.warning || cameraLostAt !== null ? "warn" : ""}`}><video ref={setVideo} autoPlay playsInline muted />{cameraLostAt !== null
+          ? <div className="camera-lost"><span><Video size={14} />Camera stopped</span><button type="button" className="button secondary" onClick={() => void restartCamera()}>Turn camera back on</button>{cameraError && <small>{cameraError}</small>}</div>
+          : <span className={`face-pill ${proctor.status}`}>{proctor.status === "watching" ? (proctor.warning ? <><CircleAlert size={12} />Check position</> : <><ScanFace size={12} />Face tracked</>) : proctor.status === "error" ? "Tracking unavailable" : <><Loader2 size={12} className="spin" />Starting tracking</>}</span>}</div>}
         <div className="panel live-panel">
           <span className="eyebrow">THIS QUESTION</span>
           <h3>{question?.category_label ?? "Wrapping up"}</h3>

@@ -250,3 +250,8 @@
 @media(max-width:780px){.lobby-grid{grid-template-columns:1fr;gap:20px}.role-grid{grid-template-columns:1fr 1fr}.live-top{flex-wrap:wrap}.live-progress{max-width:none;flex-basis:100%;order:3;margin:0}.leave-button{margin-left:auto}.report-hero{flex-direction:column;align-items:flex-start;padding:22px}}
 @media(max-width:560px){.hub-grid{grid-template-columns:1fr}.hub-coding{grid-column:auto}.role-strip{grid-template-columns:1fr}.role-grid{grid-template-columns:1fr}.segmented{grid-template-columns:repeat(3,1fr)}.mode-grid,.format-row{grid-template-columns:1fr}.live-side{grid-template-columns:1fr}.stage{min-height:440px;padding:18px}.orb-hero{--orb:150px}.interviewer-line{flex-wrap:wrap}.interviewer-line h2{font-size:18px}.transcript-body{padding-left:0}.call-controls{gap:10px}}
 @media(prefers-reduced-motion:reduce){.orb *{animation:none!important}}
+
+/* Shown over the self-view when the camera stream ends mid-interview. */
+.self-view .camera-lost { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; color: #fff; background: rgba(0, 0, 0, 0.72); }
+.self-view .camera-lost > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.self-view .camera-lost small { font-size: 12px; opacity: 0.85; }
